@@ -1,0 +1,3 @@
+cadquery-ocp==8.0.1.0.0
+ezdxf==1.4.4
+pypdf>=5.0,<7.0

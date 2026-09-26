@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tikuzhushou}
+      POSTGRES_USER: ${POSTGRES_USER:-tiku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"], interval: 10s, timeout: 5s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server","--appendonly","yes"]
+    volumes: [redis_data:/data]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes: [minio_data:/data]
+    ports: ["9001:9001"]
+  api:
+    build: ../backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JDBC_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-tikuzhushou}
+      POSTGRES_USER: ${POSTGRES_USER:-tiku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:?set APP_BOOTSTRAP_ADMIN_PASSWORD}
+      APP_CONFIG_ENCRYPTION_KEY: ${APP_CONFIG_ENCRYPTION_KEY:?set APP_CONFIG_ENCRYPTION_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
+      DEEPSEEK_TEXT_MODEL: ${DEEPSEEK_TEXT_MODEL:-deepseek-flash}
+      DEEPSEEK_QUESTION_MODEL: ${DEEPSEEK_QUESTION_MODEL:-deepseek-flash}
+      APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost}
+      APP_OCR_TABLE_ENABLED: "true"
+      APP_AI_PROFESSIONAL_REVIEW_ENABLED: ${APP_AI_PROFESSIONAL_REVIEW_ENABLED:-true}
+      APP_AI_PROFESSIONAL_REVIEW_THRESHOLD: ${APP_AI_PROFESSIONAL_REVIEW_THRESHOLD:-75}
+      APP_AI_PROFESSIONAL_REVIEW_BATCH_SIZE: ${APP_AI_PROFESSIONAL_REVIEW_BATCH_SIZE:-5}
+      APP_AI_PROFESSIONAL_OUTSIDER_SOLVABLE_THRESHOLD: ${APP_AI_PROFESSIONAL_OUTSIDER_SOLVABLE_THRESHOLD:-35}
+      APP_AI_OPTION_REVIEW_MODE: ${APP_AI_OPTION_REVIEW_MODE:-ENFORCE}
+      APP_AI_OPTION_REWRITE_MAX_ATTEMPTS: ${APP_AI_OPTION_REWRITE_MAX_ATTEMPTS:-1}
+      APP_AI_QUESTION_FULL_REWRITE_MAX_ATTEMPTS: ${APP_AI_QUESTION_FULL_REWRITE_MAX_ATTEMPTS:-2}
+      APP_AI_QUESTION_PRO_ENABLED: ${APP_AI_QUESTION_PRO_ENABLED:-true}
+      APP_AI_QUESTION_PRO_BATCH_SIZE: ${APP_AI_QUESTION_PRO_BATCH_SIZE:-1}
+      APP_AI_QUESTION_PRO_CONTEXT_MAX_CHARS: ${APP_AI_QUESTION_PRO_CONTEXT_MAX_CHARS:-6000}
+      APP_AI_QUESTION_PRO_DESIGN_EFFORT: ${APP_AI_QUESTION_PRO_DESIGN_EFFORT:-high}
+      APP_AI_QUESTION_PRO_WRITE_EFFORT: ${APP_AI_QUESTION_PRO_WRITE_EFFORT:-high}
+      APP_AI_QUESTION_PRO_OPTION_REWRITE_EFFORT: ${APP_AI_QUESTION_PRO_OPTION_REWRITE_EFFORT:-high}
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_started }, minio: { condition: service_started } }
+  web:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    ports: ["80:80"]
+    depends_on: [api]
+volumes: { postgres_data: {}, redis_data: {}, minio_data: {} }

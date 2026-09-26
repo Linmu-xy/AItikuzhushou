@@ -1,0 +1,2 @@
+create table if not exists occupational_standard_versions (id uuid primary key, standard_id uuid not null references occupational_standards(id), version integer not null, status varchar(24) not null, schema_json text not null, created_at timestamp with time zone not null, unique(standard_id,version));
+create index if not exists idx_standard_versions_standard on occupational_standard_versions(standard_id,version desc);

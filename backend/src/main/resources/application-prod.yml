@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/tikuzhushou}
+    username: ${POSTGRES_USER:tiku}
+    password: ${POSTGRES_PASSWORD:change-me}
+  jpa: { properties: { hibernate: { dialect: org.hibernate.dialect.PostgreSQLDialect } } }
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+app:
+  mail:
+    local-code-mode: false
+  ai:
+    question-refinement-enabled: ${APP_AI_QUESTION_REFINEMENT_ENABLED:true}
+    standard-extraction-enabled: ${APP_AI_STANDARD_EXTRACTION_ENABLED:true}
+    question-batch-size: ${APP_AI_QUESTION_BATCH_SIZE:3}
+    question-concurrency: ${APP_AI_QUESTION_CONCURRENCY:5}
+  ocr:
+    enabled: ${APP_OCR_ENABLED:true}
+    max-pages: ${APP_OCR_MAX_PAGES:120}
+  storage:
+    provider: ${APP_STORAGE_PROVIDER:minio}
+    minio-endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+    minio-bucket: ${MINIO_BUCKET:tikuzhushou}
+  queue:
+    provider: ${APP_QUEUE_PROVIDER:redis}

@@ -1,0 +1,3 @@
+package com.tikuzhushou.api;
+import com.tikuzhushou.retrieval.RetrievalService;import java.util.*;import org.springframework.web.bind.annotation.*;
+@RestController @RequestMapping("/api/retrieval") public class RetrievalController {private final RetrievalService retrieval;public RetrievalController(RetrievalService retrieval){this.retrieval=retrieval;}@GetMapping("/search") Map<String,Object> search(@RequestParam UUID knowledgeBaseId,@RequestParam String q,@RequestParam(defaultValue="5") int topK){var hits=retrieval.search(knowledgeBaseId,q,topK);return Map.of("query",q,"hits",hits,"count",hits.size());}}

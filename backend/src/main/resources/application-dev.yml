@@ -1,0 +1,6 @@
+spring:
+  datasource: { url: jdbc:h2:file:./data/tiku;MODE=PostgreSQL;DB_CLOSE_DELAY=-1, username: sa, password: '' }
+  jpa: { properties: { hibernate: { dialect: org.hibernate.dialect.H2Dialect } } }
+app:
+  mail:
+    local-code-mode: true

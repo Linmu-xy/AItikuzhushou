@@ -1,0 +1,81 @@
+spring:
+  application: { name: tiku-api }
+  profiles: { default: dev }
+  servlet: { multipart: { max-file-size: 64MB, max-request-size: 72MB } }
+  jpa: { open-in-view: false, hibernate: { ddl-auto: validate } }
+  flyway: { enabled: true }
+  session: { timeout: 12h, cookie: { http-only: true, same-site: lax } }
+app:
+  ai:
+    base-url: "${DEEPSEEK_BASE_URL:https://api.deepseek.com}"
+    # Bound a stalled provider response; a disconnected browser must not leave a planning transaction open indefinitely.
+    read-timeout-seconds: "${APP_AI_READ_TIMEOUT_SECONDS:120}"
+    text-model: "${DEEPSEEK_TEXT_MODEL:deepseek-flash}"
+    question-model: "${DEEPSEEK_QUESTION_MODEL:deepseek-flash}"
+    vision-model: "${DEEPSEEK_VISION_MODEL:deepseek-v4-flash-vision-exp}"
+    api-key: "${DEEPSEEK_API_KEY:}"
+    question-refinement-enabled: "${APP_AI_QUESTION_REFINEMENT_ENABLED:true}"
+    standard-extraction-enabled: "${APP_AI_STANDARD_EXTRACTION_ENABLED:true}"
+    # Similar type/level questions share one generation call; failed items are still retried alone.
+    question-batch-size: "${APP_AI_QUESTION_BATCH_SIZE:3}"
+    question-concurrency: "${APP_AI_QUESTION_CONCURRENCY:5}"
+    professional-review-enabled: "${APP_AI_PROFESSIONAL_REVIEW_ENABLED:true}"
+    professional-review-threshold: "${APP_AI_PROFESSIONAL_REVIEW_THRESHOLD:75}"
+    professional-review-batch-size: "${APP_AI_PROFESSIONAL_REVIEW_BATCH_SIZE:5}"
+    # Retry the reviewer once on timeout/empty/invalid JSON; never regenerate the question for a reviewer outage.
+    professional-review-retry-attempts: "${APP_AI_PROFESSIONAL_REVIEW_RETRY_ATTEMPTS:1}"
+    professional-outsider-solvable-threshold: "${APP_AI_PROFESSIONAL_OUTSIDER_SOLVABLE_THRESHOLD:35}"
+    # SHADOW records option-quality findings without blocking delivery; ENFORCE is the production gate.
+    option-review-mode: "${APP_AI_OPTION_REVIEW_MODE:ENFORCE}"
+    option-rewrite-max-attempts: "${APP_AI_OPTION_REWRITE_MAX_ATTEMPTS:1}"
+    # A failed candidate is repaired once; repeated full rewrites multiply cost without
+    # improving evidence grounding reliably.
+    question-full-rewrite-max-attempts: "${APP_AI_QUESTION_FULL_REWRITE_MAX_ATTEMPTS:1}"
+    question-pro-enabled: "${APP_AI_QUESTION_PRO_ENABLED:true}"
+    question-pro-batch-size: "${APP_AI_QUESTION_PRO_BATCH_SIZE:3}"
+    question-pro-context-max-chars: "${APP_AI_QUESTION_PRO_CONTEXT_MAX_CHARS:4500}"
+    question-pro-design-effort: "${APP_AI_QUESTION_PRO_DESIGN_EFFORT:high}"
+    question-pro-write-effort: "${APP_AI_QUESTION_PRO_WRITE_EFFORT:low}"
+    question-pro-option-rewrite-effort: "${APP_AI_QUESTION_PRO_OPTION_REWRITE_EFFORT:low}"
+  security:
+    bootstrap-admin-password: "${APP_BOOTSTRAP_ADMIN_PASSWORD}"
+    config-encryption-key: "${APP_CONFIG_ENCRYPTION_KEY:}"
+  mail:
+    # Never expose a one-time code from a production API response. The development
+    # profile explicitly enables local delivery so the test environment stays usable.
+    local-code-mode: "${APP_MAIL_LOCAL_CODE_MODE:false}"
+  storage:
+    local-path: "${APP_STORAGE_PATH:./storage}"
+  export:
+    # PDF exports embed a Unicode font so Chinese text remains searchable and readable.
+    # Override this in production when the host does not provide one of the built-in paths.
+    pdf-font-path: "${APP_EXPORT_PDF_FONT_PATH:}"
+  queue:
+    provider: "${APP_QUEUE_PROVIDER:local}"
+    key: "${APP_QUEUE_KEY:tiku:generation:jobs}"
+    document-key: "${APP_DOCUMENT_QUEUE_KEY:tiku:document:jobs}"
+    business-key: "${APP_BUSINESS_QUEUE_KEY:tiku:business:jobs}"
+    cad-key: "${APP_CAD_QUEUE_KEY:tiku:cad:jobs}"
+  cad:
+    worker-command: "${APP_CAD_WORKER_COMMAND:python}"
+    worker-script: "${APP_CAD_WORKER_SCRIPT:../tools/cad_worker/worker.py}"
+    worker-python-path: "${APP_CAD_WORKER_PYTHONPATH:}"
+    work-root: "${APP_CAD_WORK_ROOT:./cad-work}"
+    timeout-seconds: "${APP_CAD_WORKER_TIMEOUT_SECONDS:300}"
+    deflection: "${APP_CAD_PREVIEW_DEFLECTION:0.5}"
+    max-triangles: "${APP_CAD_PREVIEW_MAX_TRIANGLES:250000}"
+    max-file-size: "${APP_CAD_MAX_FILE_SIZE:67108864}"
+  ocr:
+    enabled: "${APP_OCR_ENABLED:false}"
+    max-pages: "${APP_OCR_MAX_PAGES:120}"
+    # Separate HTTP deadlines: preserve a high-quality first read but prevent one page blocking a document.
+    basic-timeout-seconds: "${APP_OCR_BASIC_TIMEOUT_SECONDS:45}"
+    high-thinking-timeout-seconds: "${APP_OCR_HIGH_THINKING_TIMEOUT_SECONDS:60}"
+    retry-timeout-seconds: "${APP_OCR_RETRY_TIMEOUT_SECONDS:45}"
+    patch-timeout-seconds: "${APP_OCR_PATCH_TIMEOUT_SECONDS:30}"
+    table:
+      enabled: "${APP_OCR_TABLE_ENABLED:false}"
+      # Only candidate pages are rasterized at this DPI; page crops recover small text.
+      dpi: "${APP_OCR_TABLE_DPI:300}"
+  cors-origins: "${APP_CORS_ORIGINS:http://127.0.0.1:4173,http://localhost:4173,http://127.0.0.1:5173,http://localhost:5173}"
+springdoc: { swagger-ui: { path: /swagger-ui.html } }

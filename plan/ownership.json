@@ -1,0 +1,7 @@
+{
+  "frontend/src/App.tsx": "shell",
+  "frontend/src/calibration.css": "shared",
+  "frontend/src/AssistantWorkspace.tsx": "leaf",
+  "frontend/src/ProductPolish.tsx": "leaf",
+  "frontend/src/product-polish.css": "shared"
+}

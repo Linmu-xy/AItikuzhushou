@@ -1,0 +1,8 @@
+[
+  {"id":"shell-navigation","files":["frontend/src/App.tsx","frontend/src/calibration.css"],"rationale":"收敛为四个业务模块，账户与系统设置移到右上角，建立工作台顶部工具区。","risk":"high"},
+  {"id":"overview-workspace","files":["frontend/src/App.tsx","frontend/src/calibration.css"],"rationale":"总览从指标卡片改为今日队列、流程进度和下一步操作。","risk":"medium"},
+  {"id":"knowledge-workspace","files":["frontend/src/App.tsx","frontend/src/calibration.css"],"rationale":"资料管理使用集合、文档列表和详情操作的工作区结构。","risk":"medium"},
+  {"id":"review-layout","files":["frontend/src/ProductPolish.tsx","frontend/src/product-polish.css","frontend/src/calibration.css"],"rationale":"审核与验收页面减少纵向堆叠，突出题目、证据和操作。","risk":"high"},
+  {"id":"accessibility-performance","files":["frontend/src/App.tsx","frontend/src/AssistantWorkspace.tsx","frontend/src/calibration.css"],"rationale":"保持焦点、表单语义、移动端和长列表渲染质量。","risk":"low"},
+  {"id":"build-test","files":["frontend"],"rationale":"构建、浏览器巡检和响应式截图验证。","risk":"low"}
+]

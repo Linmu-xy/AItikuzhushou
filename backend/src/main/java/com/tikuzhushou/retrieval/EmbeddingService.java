@@ -1,0 +1,4 @@
+package com.tikuzhushou.retrieval;
+import java.util.*;import org.springframework.stereotype.Service;
+/** Offline deterministic embedding for the MVP. Replace this bean with a remote embedding model in production. */
+@Service public class EmbeddingService {public static final int DIMENSIONS=128;public float[] embed(String text){float[] v=new float[DIMENSIONS];String normalized=text==null?"":text.replaceAll("\\s+","");for(int i=0;i<normalized.length();i++){int code=normalized.codePointAt(i);v[Math.floorMod(code*31+i*17,DIMENSIONS)]+=1f;if(i+1<normalized.length())v[Math.floorMod(code*131+normalized.codePointAt(i+1),DIMENSIONS)]+=.5f;}float norm=0;for(float n:v)norm+=n*n;norm=(float)Math.sqrt(norm);if(norm>0)for(int i=0;i<v.length;i++)v[i]/=norm;return v;}public float cosine(float[] a,float[] b){float total=0;for(int i=0;i<Math.min(a.length,b.length);i++)total+=a[i]*b[i];return total;}public String model(){return "local-hash-128-mvp";}}

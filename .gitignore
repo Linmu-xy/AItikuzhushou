@@ -1,0 +1,54 @@
+# 存储卷数据
+minio-data/
+redis-data/
+storage/
+cad-work/
+
+# 日志
+*.log
+logs/
+backend/logs/
+
+# IDE、工具缓存
+.vite/
+.reasonix/
+frontend/.vite/
+reasonix.toml
+
+# 环境密钥（避免上传真实密钥）
+.env
+
+# Java / Maven 构建产物
+target/
+backend/target/
+*.class
+*.tsbuildinfo
+
+# 前端依赖与构建产物
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# 本地临时文件、交付包与压缩归档
+tmp/
+/delivery/
+*.zip
+
+# 本地工具缓存（例如内置 Maven）
+.tools/
+
+# 本地数据库
+*.mv.db
+*.trace.db
+
+# 运行时上传/生成文件
+/backend/storage/
+docs/delivery/qa/render-*/
+docs/delivery/qa/
+docs/delivery/*.docx
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
