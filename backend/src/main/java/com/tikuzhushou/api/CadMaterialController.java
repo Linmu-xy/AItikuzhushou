@@ -91,6 +91,12 @@ public class CadMaterialController {
     return resource(path, "text/plain", id + ".obj");
   }
 
+  @GetMapping(value = "/{id}/drawing-pages/{page}/image", produces = MediaType.IMAGE_PNG_VALUE)
+  ResponseEntity<Resource> drawingPage(@PathVariable UUID id, @PathVariable int page) throws Exception {
+    Path path = analysis.materializeDrawingPage(id, page);
+    return resource(path, MediaType.IMAGE_PNG_VALUE, id + "-page-" + page + ".png");
+  }
+
   private ResponseEntity<Resource> resource(Path path, String mediaType, String filename) throws Exception {
     if (!Files.isRegularFile(path)) throw new IllegalArgumentException("文件不存在");
     MediaType type;

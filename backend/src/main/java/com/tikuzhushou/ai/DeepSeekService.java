@@ -51,6 +51,8 @@ public class DeepSeekService {
   }
 
   public String questionModel() { return configuration.settings().questionModel(); }
+  public String textModel() { return configuration.settings().textModel(); }
+  public String visionModel() { return configuration.settings().visionModel(); }
 
   public String analyseJson(String system, String prompt, int maxTokens) {
     String jsonSystem = system + "\n你必须只输出合法 JSON，不得输出 Markdown 代码块或 JSON 之外的文字。";
@@ -93,6 +95,13 @@ public class DeepSeekService {
     return completion(configuration.settings().questionModel(), List.of(
         Map.of("role", "system", "content", jsonSystem),
         Map.of("role", "user", "content", prompt)), true, maxTokens, true, reasoningEffort, operation);
+  }
+
+  /** Bounded protocol recovery must preserve the configured question model, not silently switch models. */
+  public String analyseQuestionJsonFast(String system, String prompt, int maxTokens, String operation) {
+    return completion(configuration.settings().questionModel(), List.of(
+        Map.of("role", "system", "content", system + "\n只输出完整合法 JSON。"),
+        Map.of("role", "user", "content", prompt)), true, maxTokens, false, "low", operation);
   }
 
   /** Assessment authoring may inspect original pages and crops, not only their OCR transcription. */
@@ -265,8 +274,10 @@ public class DeepSeekService {
         throw new IllegalStateException();
       }
       String content = String.valueOf(message.get("content")).trim();
-      if (content.isBlank() || "null".equals(content)) throw new IllegalStateException();
-      visibleOutputChars = content.length();
+      visibleOutputChars = content.isBlank() || "null".equals(content) ? 0 : content.length();
+      if ("length".equals(choice.get("finish_reason")))
+        throw new ModelResponseException(ModelResponseException.Reason.TRUNCATED);
+      if (visibleOutputChars == 0) throw new ModelResponseException(ModelResponseException.Reason.EMPTY);
       long durationMs = (System.nanoTime() - started) / 1_000_000;
       quota.complete(reservation, visibleOutputChars, reportedUsage);
       quota.recordEvent(reservation, model, reasoningEffort, thinking, operation, visibleOutputChars, reportedUsage, durationMs);
@@ -279,6 +290,7 @@ public class DeepSeekService {
           visibleOutputChars, reportedUsage, started);
       log.error("deepseek {} returned an empty or malformed response after {} ms", model,
           (System.nanoTime() - started) / 1_000_000);
+      if (e instanceof ModelResponseException responseError) throw responseError;
       throw new IllegalStateException("模型响应为空或格式异常", e);
     }
   }

@@ -1,0 +1,44 @@
+{
+  "offlineFixtures": 41,
+  "javaBackendTests": 221,
+  "nodeAssertions": 3,
+  "promptfoo": {
+    "successes": 41,
+    "failures": 0,
+    "errors": 0,
+    "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 41,
+      "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+        "total": 0,
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "numRequests": 0,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    "durationMs": 107,
+    "evaluationDurationMs": 107
+  },
+  "meaning": "Engineering regression only, not teacher quality acceptance",
+  "modelCalls": 0,
+  "executionVersion": "OPEN_ASSESSMENT_V2_3_1",
+  "javaBackendFailures": 0
+}

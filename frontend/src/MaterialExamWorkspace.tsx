@@ -51,6 +51,15 @@ type AnalysisView = {
   job?: { id: string; parser: string; status: string; errorCode?: string; errorMessage?: string; createdAt: string };
   facts: Fact[];
   annotations: Annotation[];
+  previewAssets: PreviewAsset[];
+};
+
+type PreviewAsset = {
+  id: string;
+  assetType: string;
+  pageNumber?: number;
+  mediaType: string;
+  sizeBytes: number;
 };
 
 type Props = {
@@ -110,6 +119,37 @@ export function MaterialExamWorkspace({ auth, onMessage }: Props) {
   const selectedMaterial = useMemo(() => materials.find(item => item.id === selectedId), [materials, selectedId]);
   const factsReady = analysis?.facts.filter(item => item.usableForGeneration).length || 0;
   const canPreview = Boolean(analysis?.job && ['PARSED', 'PARSED_PARTIAL'].includes(analysis.job.status) && ['STEP', 'STP'].includes(analysis.material.format));
+  const drawingPages = useMemo(() => (analysis?.previewAssets || [])
+    .filter(asset => asset.assetType === 'DRAWING_PAGE' && asset.pageNumber)
+    .sort((left, right) => (left.pageNumber || 0) - (right.pageNumber || 0)), [analysis?.previewAssets]);
+  const drawingPageKey = drawingPages.map(asset => `${asset.id}:${asset.pageNumber}`).join(',');
+  const [drawingImageUrls, setDrawingImageUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!selectedId || !drawingPages.length) {
+      setDrawingImageUrls({});
+      return undefined;
+    }
+    const controller = new AbortController();
+    const headers = new Headers();
+    if (auth.startsWith('Basic ')) headers.set('Authorization', auth);
+    const urls: Record<string, string> = {};
+    void Promise.all(drawingPages.map(async asset => {
+      const response = await fetch(`/api/cad-materials/${selectedId}/drawing-pages/${asset.pageNumber}/image`, {
+        headers, credentials: 'same-origin', signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('图纸页加载失败');
+      return [asset.id, URL.createObjectURL(await response.blob())] as const;
+    })).then(entries => {
+      if (controller.signal.aborted) return;
+      entries.forEach(([id, url]) => { urls[id] = url; });
+      setDrawingImageUrls({ ...urls });
+    }).catch(() => { if (!controller.signal.aborted) setDrawingImageUrls({}); });
+    return () => {
+      controller.abort();
+      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [auth, drawingPageKey, selectedId]);
 
   const loadBases = async () => {
     const result = await request<KnowledgeBase[]>('/api/knowledge-bases', auth);
@@ -237,7 +277,7 @@ export function MaterialExamWorkspace({ auth, onMessage }: Props) {
           {!selectedMaterial ? <section className="panel material-exam-empty"><span className="empty-mark">＋</span><h3>选择一份资料开始</h3><p className="muted">建议先上传 STEP/STP 模型，第一版可直接查看三维形体与模型事实。</p></section> : <>
             <section className="panel material-exam-file-head"><div><p className="section-kicker">当前资料 · {selectedMaterial.format}</p><h2>{selectedMaterial.originalName}</h2><p className="muted">{formatBytes(selectedMaterial.sizeBytes)} · 上传于 {new Date(selectedMaterial.createdAt).toLocaleString()}</p></div><div className="material-head-actions"><span className={`material-status ${selectedMaterial.status.toLowerCase()}`}>{statusLabel(selectedMaterial.status)}</span><a className="button secondary" href={downloadUrl}>下载原文件</a>{(!task || !['QUEUED', 'RUNNING'].includes(task.status)) && <button onClick={() => void analyze(selectedMaterial)} disabled={busy}>{analysis?.job ? '重新分析' : '开始分析'}</button>}</div></section>
             {task && <section className="material-task-strip" aria-live="polite"><div><b>{statusLabel(task.status)}</b><span>{task.statusMessage || statusLabel(task.stageCode)}</span></div><div className="material-task-progress"><i style={{ width: `${task.progress}%` }} /></div><strong>{task.progress}%</strong>{task.errorMessage && <small>{task.errorCode || 'FAILED'}：{task.errorMessage}</small>}</section>}
-            <section className="panel material-preview-panel"><div className="section-heading"><div><p className="section-kicker">内容预览</p><h3>{canPreview ? '三维模型预览' : isDrawing ? '工程图资料' : '资料预览'}</h3></div><span className="quiet-label">{analysis?.job ? `${analysis.job.parser} · ${statusLabel(analysis.job.status)}` : '尚未分析'}</span></div>{canPreview ? <Suspense fallback={<div className="obj-preview-loading">正在准备三维预览组件…</div>}><ObjPreview src={previewUrl} label={`${selectedMaterial.originalName} 三维模型`} /></Suspense> : isDrawing ? <div className="drawing-preview-placeholder"><span className="drawing-icon">图</span><div><b>图纸已纳入资料管理</b><p className="muted">第一版保留原文件并展示解析状态；PDF/DWG/DXF 的文字、标注和几何索引会在分析完成后列在右侧。</p><a className="button secondary" href={downloadUrl}>打开 / 下载工程图</a></div></div> : <div className="drawing-preview-placeholder"><span className="drawing-icon">?</span><div><b>等待分析后生成可用预览</b><p className="muted">当前格式暂不提供浏览器内三维预览，但原始资料会完整保留。</p></div></div>}</section>
+            <section className="panel material-preview-panel"><div className="section-heading"><div><p className="section-kicker">内容预览</p><h3>{canPreview ? '三维模型预览' : isDrawing ? '工程图复现预览' : '资料预览'}</h3></div><span className="quiet-label">{analysis?.job ? `${analysis.job.parser} · ${statusLabel(analysis.job.status)}` : '尚未分析'}</span></div>{canPreview ? <Suspense fallback={<div className="obj-preview-loading">正在准备三维预览组件…</div>}><ObjPreview src={previewUrl} label={`${selectedMaterial.originalName} 三维模型`} /></Suspense> : isDrawing && drawingPages.length ? <div className="drawing-pages-preview"><div className="drawing-pages-list">{drawingPages.map(asset => <figure key={asset.id} className="drawing-page-card">{drawingImageUrls[asset.id] ? <a href={drawingImageUrls[asset.id]} target="_blank" rel="noopener noreferrer"><img src={drawingImageUrls[asset.id]} alt={`${selectedMaterial.originalName} 第 ${asset.pageNumber} 页`} loading="lazy" /></a> : <div className="drawing-page-loading">正在加载第 {asset.pageNumber} 页…</div>}<figcaption>第 {asset.pageNumber} 页 · 高清复现</figcaption></figure>)}</div><p className="muted drawing-pages-note">页面由原始 PDF 按系统配置的高清 DPI 渲染并保存，后续可在此基础上进行标注确认。</p></div> : isDrawing ? <div className="drawing-preview-placeholder"><span className="drawing-icon">图</span><div><b>图纸已纳入资料管理</b><p className="muted">开始分析后会生成高清页面复现；当前不会把未确认的图纸内容直接用于出题。</p><a className="button secondary" href={downloadUrl}>打开 / 下载原工程图</a></div></div> : <div className="drawing-preview-placeholder"><span className="drawing-icon">?</span><div><b>等待分析后生成可用预览</b><p className="muted">当前格式暂不提供浏览器内三维预览，但原始资料会完整保留。</p></div></div>}</section>
           </>}
         </main>
 

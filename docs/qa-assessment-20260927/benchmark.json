@@ -1,0 +1,616 @@
+{
+  "generatedAt": "2026-09-27",
+  "projectId": "a1fe946e-ab00-4a15-a63b-69739ab60eb4",
+  "generationMode": "FAST",
+  "webSearchEnabled": true,
+  "pipelineVersion": "OPEN_ASSESSMENT_V2",
+  "measurementWindow": {
+    "start": "2026-09-27T05:49:00.3928791Z",
+    "end": "2026-09-27T13:56:24.746129+08:00",
+    "attribution": "Usage is time-window based, not batch-ID keyed. No other active generation jobs or concurrent model-operation events were observed."
+  },
+  "totals": {
+    "input": 24496,
+    "output": 83177,
+    "reasoning": 73454,
+    "ms": 441841
+  },
+  "byOperation": {
+    "ASSESSMENT_VISUAL_SURVEY": {
+      "calls": 3,
+      "input": 3271,
+      "output": 1593,
+      "reasoning": 0,
+      "ms": 10063
+    },
+    "ASSESSMENT_PLAN": {
+      "calls": 1,
+      "input": 3789,
+      "output": 5012,
+      "reasoning": 4050,
+      "ms": 28131
+    },
+    "ASSESSMENT_V2_AUTHOR": {
+      "calls": 5,
+      "input": 9015,
+      "output": 44777,
+      "reasoning": 38540,
+      "ms": 236548
+    },
+    "ASSESSMENT_V2_FORMAT_REPAIR": {
+      "calls": 1,
+      "input": 878,
+      "output": 5,
+      "reasoning": 0,
+      "ms": 309
+    },
+    "ASSESSMENT_V2_SOLVE": {
+      "calls": 4,
+      "input": 3968,
+      "output": 26512,
+      "reasoning": 25892,
+      "ms": 139163
+    },
+    "ASSESSMENT_V2_JUDGE": {
+      "calls": 1,
+      "input": 3575,
+      "output": 5278,
+      "reasoning": 4972,
+      "ms": 27627
+    }
+  },
+  "nonproductiveCalls": {
+    "calls": 4,
+    "input": 4569,
+    "output": 28005
+  },
+  "notes": [
+    "Reasoning tokens are included in completion tokens; do not add twice.",
+    "No SEARCH operation occurred; CALCULATE was used in question 2.",
+    "The first author attempt reached the 12000-token cap and was rejected after JSON repair; finish_reason is not persisted, so truncation is inferred rather than proven from a saved stop code.",
+    "Cost estimate uses published off-peak Flash rates; cache-hit fields and provider billing IDs are not stored."
+  ],
+  "run": {
+    "id": "50c9a62d-8807-49a9-8a58-104707e78160",
+    "status": "PARTIAL",
+    "planned_count": 3,
+    "processed_count": 3,
+    "review_required_count": 1,
+    "review_pending_count": 2,
+    "failed_count": 0,
+    "created_at": "2026-09-27T13:49:40.865102+08:00",
+    "started_at": "2026-09-27T13:49:40.910987+08:00",
+    "finished_at": "2026-09-27T13:56:24.746129+08:00"
+  },
+  "events": [
+    {
+      "id": "54e56206-bccc-40a9-a4cc-4e285db8f023",
+      "model": "deepseek-v4-flash-vision-exp",
+      "operation": "ASSESSMENT_VISUAL_SURVEY",
+      "reasoning_effort": "low",
+      "thinking_enabled": false,
+      "prompt_tokens": 1083,
+      "completion_tokens": 785,
+      "reasoning_tokens": 0,
+      "output_chars": 1084,
+      "duration_ms": 4739,
+      "created_at": "2026-09-27T13:49:06.596065+08:00"
+    },
+    {
+      "id": "961167d7-1090-41c3-ac14-f3a39abf72bd",
+      "model": "deepseek-v4-flash-vision-exp",
+      "operation": "ASSESSMENT_VISUAL_SURVEY",
+      "reasoning_effort": "low",
+      "thinking_enabled": false,
+      "prompt_tokens": 1094,
+      "completion_tokens": 449,
+      "reasoning_tokens": 0,
+      "output_chars": 679,
+      "duration_ms": 2336,
+      "created_at": "2026-09-27T13:49:09.315577+08:00"
+    },
+    {
+      "id": "e82516c6-c813-4a79-88f2-d428b0bb6dbf",
+      "model": "deepseek-v4-flash-vision-exp",
+      "operation": "ASSESSMENT_VISUAL_SURVEY",
+      "reasoning_effort": "low",
+      "thinking_enabled": false,
+      "prompt_tokens": 1094,
+      "completion_tokens": 359,
+      "reasoning_tokens": 0,
+      "output_chars": 536,
+      "duration_ms": 2988,
+      "created_at": "2026-09-27T13:49:12.586356+08:00"
+    },
+    {
+      "id": "221d7568-6c96-44e6-8215-2ab7f3b61cf8",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_PLAN",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 3789,
+      "completion_tokens": 5012,
+      "reasoning_tokens": 4050,
+      "output_chars": 1877,
+      "duration_ms": 28131,
+      "created_at": "2026-09-27T13:49:40.7324+08:00"
+    },
+    {
+      "id": "55b2c4eb-276b-40f5-9e62-6034dc961975",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_AUTHOR",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1666,
+      "completion_tokens": 12000,
+      "reasoning_tokens": 11226,
+      "output_chars": 1176,
+      "duration_ms": 67947,
+      "created_at": "2026-09-27T13:50:48.924841+08:00"
+    },
+    {
+      "id": "b9a0ed21-01d5-4394-8524-9ad439c40f1b",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_FORMAT_REPAIR",
+      "reasoning_effort": "low",
+      "thinking_enabled": false,
+      "prompt_tokens": 878,
+      "completion_tokens": 5,
+      "reasoning_tokens": 0,
+      "output_chars": 18,
+      "duration_ms": 309,
+      "created_at": "2026-09-27T13:50:49.241773+08:00"
+    },
+    {
+      "id": "27f765d2-c0a1-4487-99c5-108bb49d10aa",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_AUTHOR",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1694,
+      "completion_tokens": 11895,
+      "reasoning_tokens": 10415,
+      "output_chars": 2322,
+      "duration_ms": 66617,
+      "created_at": "2026-09-27T13:51:55.872027+08:00"
+    },
+    {
+      "id": "a853efee-c0b7-440a-aef9-3a331b411f98",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_SOLVE",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 929,
+      "completion_tokens": 8000,
+      "reasoning_tokens": 8000,
+      "output_chars": 0,
+      "duration_ms": 40629,
+      "created_at": "2026-09-27T13:52:36.507274+08:00"
+    },
+    {
+      "id": "174f2389-8692-4564-b47b-f8ef079114d8",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_AUTHOR",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1796,
+      "completion_tokens": 8840,
+      "reasoning_tokens": 8771,
+      "output_chars": 113,
+      "duration_ms": 40898,
+      "created_at": "2026-09-27T13:53:17.426981+08:00"
+    },
+    {
+      "id": "286d1595-8420-4a1e-9773-3369aeb9ad1f",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_AUTHOR",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1933,
+      "completion_tokens": 5136,
+      "reasoning_tokens": 3651,
+      "output_chars": 2393,
+      "duration_ms": 26680,
+      "created_at": "2026-09-27T13:53:44.118118+08:00"
+    },
+    {
+      "id": "b33b5997-5edc-4086-9cab-bd18794273da",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_SOLVE",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 917,
+      "completion_tokens": 3106,
+      "reasoning_tokens": 3056,
+      "output_chars": 97,
+      "duration_ms": 16501,
+      "created_at": "2026-09-27T13:54:00.626877+08:00"
+    },
+    {
+      "id": "f76a17d8-eeef-4902-99e5-6c77640840e8",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_SOLVE",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1026,
+      "completion_tokens": 7406,
+      "reasoning_tokens": 6836,
+      "output_chars": 906,
+      "duration_ms": 36602,
+      "created_at": "2026-09-27T13:54:37.236985+08:00"
+    },
+    {
+      "id": "5748095e-ce69-4fb8-a3c9-78f38f86ff09",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_JUDGE",
+      "reasoning_effort": "low",
+      "thinking_enabled": true,
+      "prompt_tokens": 3575,
+      "completion_tokens": 5278,
+      "reasoning_tokens": 4972,
+      "output_chars": 712,
+      "duration_ms": 27627,
+      "created_at": "2026-09-27T13:55:04.872324+08:00"
+    },
+    {
+      "id": "23bee529-ca97-4fff-a16d-5d861f6dfdb6",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_AUTHOR",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1926,
+      "completion_tokens": 6906,
+      "reasoning_tokens": 4477,
+      "output_chars": 3475,
+      "duration_ms": 34406,
+      "created_at": "2026-09-27T13:55:39.296057+08:00"
+    },
+    {
+      "id": "9a72d022-0081-44a8-9497-3f9077d6af08",
+      "model": "deepseek-flash",
+      "operation": "ASSESSMENT_V2_SOLVE",
+      "reasoning_effort": "high",
+      "thinking_enabled": true,
+      "prompt_tokens": 1096,
+      "completion_tokens": 8000,
+      "reasoning_tokens": 8000,
+      "output_chars": 0,
+      "duration_ms": 45431,
+      "created_at": "2026-09-27T13:56:24.732792+08:00"
+    }
+  ],
+  "items": [
+    {
+      "id": "6a73747e-c461-439e-beff-d574692751d2",
+      "sequence_no": 1,
+      "status": "REVIEW_PENDING",
+      "attempts": 2,
+      "question": {
+        "sequence": 1,
+        "type": "CASE_ANALYSIS",
+        "difficulty": "MEDIUM",
+        "points": 10,
+        "level": "KNOWLEDGE_BASE",
+        "cognitiveTarget": "APPLY",
+        "abilityObjective": "给定一个含阶梯内孔与外轮廓的套类零件（题干文字描述其结构特征与加工位置），要求考生选定主视图投影方向，并在全剖、半剖、局部剖中选取内形表达手段，用制图国标的理由说明取舍。",
+        "assessmentPoint": "依据零件内形与外形的表达需求，选定主视图投影方向与剖视图种类，并说明国标依据。",
+        "difficultyRationale": "MEDIUM：由目标能力、推理深度和条件整合程度决定难度",
+        "procedureEvidence": "",
+        "mappingEvidence": [
+          "DOMAIN_BACKGROUND"
+        ],
+        "sourceRef": "",
+        "sourceExcerpt": "",
+        "evidencePack": {
+          "contextAssets": [],
+          "standardEvidence": ""
+        },
+        "assessmentTask": "给定一个含阶梯内孔与外轮廓的套类零件（题干文字描述其结构特征与加工位置），要求考生选定主视图投影方向，并在全剖、半剖、局部剖中选取内形表达手段，用制图国标的理由说明取舍。",
+        "stem": "一个模拟的套类零件（材料45钢，单件生产），其结构如下：总长80mm；外轮廓由三段同轴圆柱组成，从左至右依次为Φ60×30、Φ45×20、Φ30×30；内孔为两级阶梯通孔，从左端面起为Φ32深25，随后为Φ16贯通至右端面。在左段Φ60外圆的正上方，沿轴向铣有一条键槽，槽宽10mm、槽深（从Φ60外圆表面算起）5mm，贯通左段全长，键槽的对称平面与零件轴线所在的竖直平面重合。在左段Φ60外圆的正下方，钻有一个M8的径向螺纹孔，孔轴线与零件轴线垂直相交并通至内孔，该孔也位于零件轴线所在的竖直平面内。加工位置：零件在车床上加工时轴线水平放置；键槽和螺孔在铣床、钻床上加工时，也以零件轴线水平、键槽朝上的位置装夹。请回答：\n(1) 主视图应如何选择投影方向？结合加工位置和形状特征说明理由。\n(2) 主视图表达上述内孔、键槽和螺孔时，应在全剖、半剖、局部剖中选用哪一种剖视图？说明取舍理由。",
+        "analysis": "学科原理：制图国标关于主视图选择的一般原则是——主视图应最能反映零件的形状特征，并尽量符合零件的加工位置或工作位置；对轴套类回转零件，通常按加工位置将轴线水平放置。剖视图的适用条件为：全剖适用于内形复杂、外形简单（或外形不需表达）的零件，尤其适合回转体；半剖适用于内、外形均需表达且形状基本对称的零件；局部剖适用于内外形均需表达而不宜用半剖的场合，或仅需表达局部内形。本题零件的外形为三段不同直径的同轴圆柱，属简单回转外形；内孔为两级阶梯孔，需沿轴向完整表达；键槽和螺孔都位于通过轴线的同一竖直平面内。因此主视图取轴线水平、垂直于轴线的投影方向，并用通过轴线的正平面全剖，可同时剖到阶梯孔、键槽和螺孔，是最合理的方案。其他合理思考：若认为键槽、螺孔可另用局部视图表达，主视图内部仍以全剖表达阶梯孔，也可视为合理，但题目要求在同一主视图上表达三者，故全剖为首选。",
+        "scoringRubric": "(1) 共4分：①明确主视图应使轴线水平放置，投影方向垂直于轴线（2分）；②说明理由中包含“符合车削加工位置”（1分）；③说明理由中包含“能反映阶梯内孔及键槽、螺孔的轴向位置和形状特征”（1分）。\n(2) 共6分：①选定全剖视图（2分）；②说明剖切平面通过零件轴线且同时包含键槽、螺孔的轴线，可一次剖到三者（2分）；③说明零件为回转体、外形简单，无需保留外形，故不用半剖（1分）；④说明内孔为连续阶梯孔需完整表达，故不用局部剖（1分）。\n以上合计10分。若考生选半剖或局部剖并给出部分合理理由，可按对应给分点酌情给分，但最高不超过4分，且必须明确指出其不能同时表达键槽、螺孔或不能完整表达阶梯孔的局限。",
+        "answer": "(1) 主视图应使零件轴线水平放置，投影方向垂直于轴线，即从前向后投影（取轴线左右水平、正对键槽和螺孔所在竖直平面的方向）。理由：符合零件主要在车床加工的装夹位置；轴线水平放置能反映阶梯内孔和阶梯外圆的轴向变化；键槽朝上、螺孔朝下，投影后均位于主视图的对称中心线上，便于剖切表达。\n(2) 应选用全剖视图。理由：零件为回转体，外形为阶梯圆柱，外形简单；内孔为阶梯孔，且键槽、螺孔都位于通过零件轴线的同一竖直平面内。用通过轴线的正平面全剖，可同时剖到阶梯内孔、键槽和螺孔，一次清晰完整地表达内形；阶梯外圆的外形轮廓在剖视图中仍能显现，并可由左视图（圆）和尺寸确定，无需保留外形视图，故不必用半剖；内孔沿轴向连续变化、需要完整表达，故不必用局部剖。若采用半剖，剖切的一半无法同时完整显示位于对称中心线上的键槽和螺孔。",
+        "options": ""
+      },
+      "design": {
+        "kind": "GENERAL",
+        "criticalClaims": [
+          "轴套类回转零件的主视图通常按加工位置将轴线水平放置，投影方向垂直于轴线，以反映轴向结构。",
+          "全剖视图适用于内形复杂、外形简单或外形不需表达的回转体零件，剖切平面一般通过零件轴线并平行于基本投影面。",
+          "当内孔、键槽、螺孔等结构位于同一通过轴线的剖切平面内时，可用一次全剖同时剖到并表达它们。",
+          "半剖要求内、外形均需表达且形状基本对称；局部剖用于局部内形或内外形均需表达而不宜半剖的场合。"
+        ],
+        "performanceEvidence": "考生能依据加工位置与形状特征确定主视图投影方向；能从题干定位键槽、螺孔与零件轴线的共面关系，判断三者可由同一剖切平面剖到；能比较全剖、半剖、局部剖的适用条件，排除不适用于本题的方案并给出规范理由。",
+        "misconceptions": [
+          "认为对称回转体必须用半剖，忽略外形简单时全剖即可。",
+          "看到键槽或螺孔就认为必须用局部剖，不检查它们是否位于同一剖切平面内。",
+          "认为主视图应沿轴线方向投影（得到圆视图）才能反映回转形状。",
+          "把全剖与半剖的适用条件混为一谈，认为半剖适用于一切对称零件。",
+          "误以为全剖会丢失外轮廓的阶梯信息，因此不敢选全剖。"
+        ],
+        "syntheticGivens": [
+          "零件总长80mm、三段外圆Φ60×30、Φ45×20、Φ30×30均为模拟设定。",
+          "内孔Φ32深25、Φ16贯通均为模拟设定。",
+          "键槽宽10mm、深5mm、贯通左段全长且位于正上方，螺孔M8位于正下方并与轴线垂直相交，均为模拟设定。",
+          "加工位置：车削时轴线水平；铣键槽、钻螺孔时以轴线水平、键槽朝上装夹，均为模拟设定。"
+        ],
+        "unresolvedFacts": [],
+        "pipelineVersion": "OPEN_ASSESSMENT_V2",
+        "answerability": "依据机械制图国标关于主视图选择与各类剖视图适用条件的一般规定即可判断；考生只需阅读题干的结构与位置描述，不依赖任何原图或模糊读数。",
+        "requiredMaterial": "PROVIDED_TEXT",
+        "AuthorResearch": [],
+        "SolveResearch": [],
+        "JudgeResearch": []
+      },
+      "review": {
+        "passed": false,
+        "available": false,
+        "discriminationScore": 0,
+        "outsiderSolvableScore": 0,
+        "flags": [
+          "PROFESSIONAL_REVIEW_UNAVAILABLE"
+        ],
+        "feedback": "开放命题阶段未完成（IllegalStateException），请检查服务日志后重试审核",
+        "optionReviews": []
+      },
+      "error_message": "开放命题阶段未完成（IllegalStateException），请检查服务日志后重试审核",
+      "updated_at": "2026-09-27T13:52:36.510088+08:00"
+    },
+    {
+      "id": "4f2beab4-78b7-489e-ad36-3f564cfde5cc",
+      "sequence_no": 2,
+      "status": "REVIEW_REQUIRED",
+      "attempts": 1,
+      "question": {
+        "sequence": 2,
+        "type": "CALCULATION",
+        "difficulty": "MEDIUM",
+        "points": 10,
+        "level": "KNOWLEDGE_BASE",
+        "cognitiveTarget": "APPLY",
+        "abilityObjective": "给出某塑件某一方向的名义尺寸、材料收缩率区间、型腔深度与拔模角度等模拟数据，要求考生计算该方向模具型腔对应工作尺寸，并说明拔模斜度对该方向尺寸的影响及收缩率取值依据。",
+        "assessmentPoint": "把注塑件工艺要求（收缩率、拔模斜度）迁移为模具成型零件工作尺寸，并解释不能直接采用制品名义尺寸的原因。",
+        "difficultyRationale": "MEDIUM：由目标能力、推理深度和条件整合程度决定难度",
+        "procedureEvidence": "",
+        "mappingEvidence": [
+          "DOMAIN_BACKGROUND"
+        ],
+        "sourceRef": "",
+        "sourceExcerpt": "",
+        "evidencePack": {
+          "contextAssets": [],
+          "standardEvidence": ""
+        },
+        "assessmentTask": "给出某塑件某一方向的名义尺寸、材料收缩率区间、型腔深度与拔模角度等模拟数据，要求考生计算该方向模具型腔对应工作尺寸，并说明拔模斜度对该方向尺寸的影响及收缩率取值依据。",
+        "stem": "某注塑制件为无盖矩形盒（模拟件），材料为PP（模拟）。盒体外形沿长度方向的名义尺寸为 L₀ = 120.00 mm，盒体深度（即脱模方向尺寸）为 h₀ = 28.0 mm。该材料在本工艺条件下的成形收缩率 S 为 1.5%~2.5%（模拟区间），S 的定义为：S =（模具型腔成型尺寸 − 冷却后制品对应尺寸）/ 模具型腔成型尺寸。为便于脱模，盒体侧壁沿脱模方向设有单边拔模斜度 α = 1°（模拟值），盒体沿深度方向脱模。取 tan1° ≈ 0.0175。\n\n请解答：\n(1) 取收缩率区间中值，写出所用关系式并计算长度方向模具型腔的成型工作尺寸，结果保留两位小数。\n(2) 说明为什么不能直接把 120.00 mm 当作该型腔的成型尺寸，并说明实际中收缩率取值应依据什么。\n(3) 说明拔模斜度对长度方向尺寸沿深度方向的影响规律，并计算 h₀ = 28.0 mm 深度范围内长度方向的单边变化量。",
+        "analysis": "学科原理：注塑件从型腔中脱出并冷却后发生收缩，型腔成型尺寸必须补偿该收缩。题干已把收缩率定义为相对模具尺寸之比 S=(L_m−L_s)/L_m，因此唯一正确关系式为 L_m=L_s/(1−S)。若误按相对制品尺寸的收缩率定义写成 L_m=L_s(1+S)，得 120.00×1.02=122.40 mm，与 122.45 mm 不等（舍入后仍不同），说明收缩率定义决定了公式形式，二者不是等价公式，不能互换。区间取值：S 在 1.5%~2.5% 时对应型腔尺寸为 120.00/0.985≈121.83 mm 到 120.00/0.975≈123.08 mm，中值 2.0% 给 122.45 mm，区间体现了材料与工艺波动，实际以试模修正。拔模斜度：α=1° 时沿深度 28.0 mm 的单边横向变化为 28.0×tan1°；tan1°≈0.017455，得 0.4887 mm，取题干近似 0.0175 得 0.49 mm，两者在两位小数下一致。关键在于识别拔模斜度只改变垂直于脱模方向的尺寸随深度的分布，且与收缩补偿是两项独立修正，须说明所标注尺寸的测量基准（开口端或底端）。其他合理解法：可用 L_m=L₀/(1−S) 直接代入，也可先算收缩量再回加，只要保证分母基准为模具尺寸即可。",
+        "scoringRubric": "共10分。1) 正确写出关系式 L_m=L₀/(1−S)（分母为 1−S 而非 1+S），2分。2) 代入 S=0.020 得 122.45 mm（保留两位小数），1分。3) 说明不能直接用名义尺寸的原因：名义尺寸是冷却后制品尺寸，型腔须在热态充模时成形并放大补偿收缩，2分。4) 说明收缩率取值依据：来自材料与工艺条件（方向、壁厚、温度、保压等）差异，实际应查材料推荐值/取平均收缩率并结合试模修正，2分。5) 说明拔模斜度使垂直脱模方向的尺寸沿深度线性变化（开口端与底端不同），并与收缩补偿相互独立，1分。6) 计算单边变化量 Δ=28.0×tan1°≈0.49 mm（0.4887~0.49 mm 之间均可），2分。分值合计 2+1+2+2+1+2=10 分。",
+        "answer": "(1) 由 S=(L_m−L₀)/L_m 得 L_m=L₀/(1−S)。取中值 S=2.0%=0.020，L_m=120.00/(1−0.020)=120.00/0.98=122.4489…≈122.45 mm。(2) 120.00 mm 是制品冷却收缩后的室温名义尺寸，而型腔是在充模时赋予熔体形状的，制品出模冷却后会收缩变小，故型腔必须按 1/(1−S) 放大，不能直接用名义尺寸；收缩率区间源于材料牌号、壁厚、流动方向、温度与保压等差异，实际应按材料推荐值结合试模实测（或取平均收缩率）确定，并以试模修正为准。(3) 拔模斜度使型腔侧壁相对脱模方向倾斜，垂直于脱模方向的长度尺寸沿深度方向线性变化，开口端与底端截面尺寸不同；该项是脱模结构修正，与收缩补偿相互独立。单边变化量 Δ=h₀·tanα=28.0×0.0175≈0.49 mm（按 tan1°≈0.017455 亦得 ≈0.4887 mm，保留两位为 0.49 mm）。",
+        "options": ""
+      },
+      "design": {
+        "kind": "GENERAL",
+        "criticalClaims": [
+          "成形收缩率相对模具成型尺寸定义时，型腔尺寸=制品尺寸/(1−S)，而非制品尺寸×(1+S)",
+          "拔模斜度只在垂直于脱模方向引入随深度线性变化的尺寸差，与收缩补偿是两项独立修正"
+        ],
+        "performanceEvidence": "能从收缩率定义出发选出正确关系式并算得 122.45 mm；能说明名义尺寸与热态成型尺寸的区别；能区分拔模修正与收缩补偿并用 tanα 算出约 0.49 mm 的单边变化量。",
+        "misconceptions": [
+          "直接用 120.00 mm 作型腔尺寸",
+          "把 L_m=120.00×(1+0.02)=122.40 mm 当作与 122.45 mm 等价",
+          "认为拔模斜度会改变深度方向的总深度尺寸",
+          "把拔模斜度带来的尺寸差当作收缩补偿一起并入同一系数"
+        ],
+        "syntheticGivens": [
+          "材料 PP（模拟）",
+          "长度方向名义尺寸 120.00 mm",
+          "盒体深度（脱模方向）28.0 mm",
+          "成形收缩率区间 1.5%~2.5%（模拟），定义为相对模具成型尺寸",
+          "单边拔模斜度 1°（模拟），沿深度方向脱模",
+          "tan1°≈0.0175"
+        ],
+        "unresolvedFacts": [],
+        "pipelineVersion": "OPEN_ASSESSMENT_V2",
+        "answerability": "题干已完整给出名义尺寸、收缩率区间、深度与角度等模拟数值；考生按公开的注塑收缩关系与脱模斜度几何关系计算，并说明区间取值的理由即可判定。",
+        "requiredMaterial": "PROVIDED_TEXT",
+        "AuthorResearch": [
+          {
+            "stage": "AUTHOR",
+            "precision": "16位有效数字；评分时再按题干要求舍入",
+            "results": [
+              {
+                "expression": "120/0.985",
+                "value": "121.8274111675127"
+              },
+              {
+                "expression": "120/0.975",
+                "value": "123.0769230769231"
+              },
+              {
+                "expression": "120/0.98",
+                "value": "122.4489795918367"
+              },
+              {
+                "expression": "2*28*0.01746",
+                "value": "0.97776"
+              },
+              {
+                "expression": "120/0.975-2*28*0.01746",
+                "value": "122.0991630769231"
+              }
+            ],
+            "status": "CALCULATED"
+          }
+        ],
+        "SolveResearch": [
+          {
+            "stage": "SOLVE",
+            "precision": "16位有效数字；评分时再按题干要求舍入",
+            "results": [
+              {
+                "expression": "120/(1-0.02)",
+                "value": "122.4489795918367"
+              },
+              {
+                "expression": "28*0.0175",
+                "value": "0.49"
+              },
+              {
+                "expression": "2*28*0.0175",
+                "value": "0.98"
+              },
+              {
+                "expression": "120-2*28*0.0175",
+                "value": "119.02"
+              }
+            ],
+            "status": "CALCULATED"
+          }
+        ],
+        "JudgeResearch": [],
+        "IndependentSolution": {
+          "action": "FINAL",
+          "answer": "(1) 收缩率中值 S=(1.5%+2.5%)/2=2.0%=0.020。按定义 S=(M-P)/M，故 M=P/(1-S)。取 P=L0=120.00 mm，M=120.00/(1-0.020)=122.44898≈122.45 mm。故与 L0 对应深度截面的长度方向模具型腔成型工作尺寸约为 122.45 mm；未另计拔模斜度引起的沿深度变化。\n(2) 不能直接把 120.00 mm 当作型腔成型尺寸，因为塑料冷却后会发生收缩，型腔须大于冷却后制品；且本题 S 以模具型腔尺寸为分母，应使用 M=P/(1-S)，不是 P(1+S)。实际收缩率应依据材料牌号/供应商数据、制品壁厚与几何、浇口位置与流动取向、料温/模温/注射压力/保压/冷却及后收缩等工艺条件，并用模流分析或试模实测修正。\n(3) 拔模斜度使长度方向尺寸沿脱模深度线性变化，通常开口端大于底部，每侧变化量为 h tanα。h0=28.0 mm 时，单边变化量=28.0×tan1°≈28.0×0.0175=0.49 mm；两侧总长度变化约 2×0.49=0.98 mm。若换算到模具型腔且深度也按收缩放大，则单边约 0.50 mm、总约 1.00 mm。",
+          "solution": "按给定定义 M=P/(1-S)；中值 S=0.020，M=120/0.98=122.44898≈122.45 mm。拔模单边变化 Δ=h0 tanα=28.0×0.0175=0.49 mm，总长度变化约0.98 mm。",
+          "answerable": true,
+          "ambiguities": [
+            "L0=120.00 mm 未说明是冷却后制品在开口端、底部还是平均截面的名义长度；因有拔模斜度，型腔长度沿深度方向不是单一值。",
+            "若(3)要求模具型腔沿深度的单边变化量，需规定模具深度是否也按 1/(1-S) 放大；按制品深度计算为0.49 mm，按模具深度计算约0.50 mm。"
+          ],
+          "unresolvedFacts": [
+            "实际PP收缩率需由材料供应商数据、模流分析和试模确定，题目只给出模拟区间。"
+          ]
+        },
+        "Judgment": {
+          "action": "FINAL",
+          "status": "PASS",
+          "checks": {
+            "correctness": "PASS",
+            "answerability": "PASS",
+            "alignment": "PASS",
+            "rubric": "PASS",
+            "diversity": "PASS",
+            "criticalFacts": "PASS",
+            "independentAgreement": "PASS"
+          },
+          "optionChecks": {
+            "A": "PASS",
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS"
+          },
+          "discriminationScore": 75,
+          "outsiderSolvableScore": 15,
+          "flags": [],
+          "surfaceShortcut": false,
+          "shortcutReason": "无选项可供表面匹配；需依据收缩率定义推导 L_m=L0/(1−S)，并区分拔模修正与收缩补偿，仅凭数字或最长选项无法猜中。",
+          "counterexampleCheck": {
+            "alternative": "未找到能推翻参考答案的合理反例；若把拔模影响并入(1)的型腔尺寸，会因未指明 L0 对应截面而产生约0.98 mm的基准差异，但题干(1)只要求收缩中值下的对应截面尺寸，(3)单独处理拔模影响，评分标准也按此分步处理，故不构成有效反例。",
+            "valid": false,
+            "excludedByRubric": false
+          },
+          "feedback": "无实质缺陷。建议题干可补充说明 L0 对应开口端还是底端，以进一步消除拔模斜度下的基准歧义；当前评分标准按对应截面与拔模独立修正处理，不影响可评分性。"
+        }
+      },
+      "review": {
+        "passed": true,
+        "available": true,
+        "discriminationScore": 75,
+        "outsiderSolvableScore": 15,
+        "flags": [],
+        "feedback": "无实质缺陷。建议题干可补充说明 L0 对应开口端还是底端，以进一步消除拔模斜度下的基准歧义；当前评分标准按对应截面与拔模独立修正处理，不影响可评分性。",
+        "optionReviews": []
+      },
+      "error_message": null,
+      "updated_at": "2026-09-27T13:55:04.874755+08:00"
+    },
+    {
+      "id": "bae85324-74e3-4564-81b3-199d996e8e40",
+      "sequence_no": 3,
+      "status": "REVIEW_PENDING",
+      "attempts": 1,
+      "question": {
+        "sequence": 3,
+        "type": "COMPREHENSIVE",
+        "difficulty": "HARD",
+        "points": 20,
+        "level": "KNOWLEDGE_BASE",
+        "cognitiveTarget": "ANALYZE_DECIDE",
+        "abilityObjective": "给定一个带内隔板与外侧凹的薄壁盒形件模拟描述（含壁厚与材料类别），要求考生确定脱模方向与分型面、规划所需视图与剖视、说明关键尺寸与工艺参数的标注处理，并列出须与模具工艺方核实的事项。",
+        "assessmentPoint": "综合分型面与脱模方向、图纸表达方案与标注策略，为薄壁盒形注塑件提出可执行方案并识别待核实条件。",
+        "difficultyRationale": "HARD：由目标能力、推理深度和条件整合程度决定难度",
+        "procedureEvidence": "",
+        "mappingEvidence": [
+          "DOMAIN_BACKGROUND"
+        ],
+        "sourceRef": "",
+        "sourceExcerpt": "",
+        "evidencePack": {
+          "contextAssets": [],
+          "standardEvidence": ""
+        },
+        "assessmentTask": "给定一个带内隔板与外侧凹的薄壁盒形件模拟描述（含壁厚与材料类别），要求考生确定脱模方向与分型面、规划所需视图与剖视、说明关键尺寸与工艺参数的标注处理，并列出须与模具工艺方核实的事项。",
+        "stem": "某模拟薄壁盒形注塑件（材料为PP，模拟）为无盖矩形盒。盒体外形的模拟名义尺寸为：长 L=120.0 mm，宽 W=80.0 mm，总深 H=30.0 mm，平均壁厚 t=2.0 mm。盒内沿宽度方向设有两条与盒底垂直的内隔板，隔板厚 2.0 mm，从盒底起算高度 24.0 mm，两条隔板将内腔沿长度方向分成三等份。盒体一个长侧壁（长120 mm 的外侧壁）上有一处矩形侧凹：沿长度方向长 40.0 mm，从该侧壁外表面向内凹入深度 d=3.0 mm；凹槽沿高度方向位于距盒口 5.0 mm 至距盒口 15.0 mm 之间。制件要求：外表面为外观面，内表面为非外观面；未注拔模斜度、未注圆角、未注公差按企业通用技术要求处理（具体数值待与工艺方确认）。所有给出的尺寸均为模拟名义尺寸，未考虑收缩与拔模。请完成以下任务：\n(1) 确定该制件的主脱模方向与主分型面位置，说明判断依据；并分析侧凹与内隔板分别对模具结构（型芯、型腔、侧向机构）的影响。（6分）\n(2) 为该制件规划二维图纸的表达方案：选择主视图的投影方向，说明需要哪些基本视图、采用何种剖视（全剖/半剖/局部剖）来表达内隔板和侧凹，并简述理由。（6分）\n(3) 说明在制件图上应如何标注或处理关键尺寸（外形、壁厚、内隔板位置、侧凹尺寸）与工艺参数（拔模斜度、收缩率、未注圆角）。（4分）\n(4) 列出至少三项必须与模具/工艺方核实的事项，并说明为什么这些事项不能仅凭制件图自行确定。（4分）",
+        "analysis": "本题综合考查分型面与脱模方向选择、注塑件表达方案和制件图标注策略。关键原理：主分型面一般选在制件最大轮廓处，并保证开模后制件留在动模一侧；主脱模方向应使制件与型芯/型腔的脱离不产生倒扣。侧凹方向与主脱模方向垂直，形成侧向倒扣，需侧向抽芯或侧向分型；内隔板平行于主脱模方向，不形成倒扣，可成型在型芯上。表达方案上，主视图应优先反映形状特征，内隔板必须用剖视表达，侧凹用局部剖或局部视图表达。标注上要区分制件图与模具图：制件图标注制品名义尺寸、公差和外观要求，收缩率、型腔工作尺寸等属于模具设计参数，不直接标在制件图上；拔模斜度、未注圆角、未注公差通常在技术要求中统一说明。其他合理方案：主视图也可选择沿宽度方向投影，只要剖切平面通过内隔板并能表达侧凹；侧凹也可用斜视图或局部放大图；若侧凹较浅且材料允许，经核实后可讨论强制脱模，但必须说明风险。",
+        "scoringRubric": "(1) 共6分：主脱模方向正确（沿盒深方向、从盒口脱出）2分；主分型面位置正确（盒口端面）2分；侧凹需侧向抽芯或侧向分型1分；内隔板不阻碍主脱模、可成型在型芯上1分。\n(2) 共6分：主视图投影方向合理并说明理由2分；俯视图表达内隔板位置和侧凹位置2分；剖视选择合理（内隔板用全剖/半剖，侧凹用局部剖或局部视图）2分。\n(3) 共4分：关键尺寸标注方案合理2分；工艺参数处理正确（拔模斜度、未注圆角在技术要求中说明，收缩率用于模具设计而不直接标在制件图上）2分。\n(4) 共4分：列出至少三项待核实事项，每项1分，共3分；其中至少一项说明为什么不能仅凭制件图自行确定，1分。合计20分。",
+        "answer": "(1) 主脱模方向：沿盒深方向，即垂直于盒底、从盒口脱出；通常取盒底朝下、盒口朝上，制件从型芯上脱出。主分型面：选在盒口边缘所在的平面（无盖盒的开口端面），使型腔在定模、型芯在动模，开模后制件留在型芯上，再由推板或推杆推出。判断依据：主分型面应设在制件最大轮廓处，而盒口是最大轮廓，开口端面平整，便于分型和脱模；主脱模方向与侧凹方向垂直。侧凹位于外侧壁，方向与主脱模方向垂直，不能直接随主脱模抽出，因此需要侧向抽芯（滑块）或侧向分型；若外观允许，也可评估强行脱模，但需核算变形和材料允许伸长率，通常优先侧抽芯。内隔板与盒底垂直、沿主脱模方向，不形成与主脱模方向相反的倒扣，因此可随型芯一起成型，在型芯上做出隔板槽；但隔板较深，需注意脱模斜度、型芯强度和排气。\n(2) 主视图投影方向：选择能反映盒体形状特征且便于剖切内隔板的方向。例如以盒底朝下、盒口朝上，沿长度方向投影（或沿宽度方向投影，只要理由充分），使主视图显示盒的宽度和深度；采用全剖或半剖，剖切平面垂直于长度方向并通过内隔板，表达内隔板与盒底、盒壁的连接及壁厚。俯视图表达盒口轮廓、内隔板沿长度方向的位置（两条隔板线）以及侧凹在长度方向的位置。侧凹所在的长侧壁需增加局部剖或局部视图，表达凹槽的深度、高度范围和长度；若侧凹不对称或位置特殊，可用向视图。剖视选择：内隔板可用全剖（不对称时）或半剖（对称时）；侧凹用局部剖或局部视图，避免整图过度剖切。\n(3) 关键尺寸标注：外形长、宽、高标注在相应视图；壁厚可在剖视中用引出线或尺寸线标注；内隔板位置（如距左端面40.0、80.0 mm）在俯视图标注；侧凹的长40.0 mm、凹入深度3.0 mm以及距盒口5.0和15.0 mm的高度位置，在主视图或局部视图中标注。工艺参数处理：拔模斜度在技术要求中统一注明“未注拔模斜度按企业通用要求”，或对重要表面单独标注；收缩率不直接标注在制件图上，而是在技术要求中注明材料及成型收缩率范围（模拟1.5%~2.5%），供模具设计时计算型腔尺寸；未注圆角在技术要求中统一注明“未注圆角按企业通用要求”；未注公差按相应标准。外观面可用技术要求说明或符号标注，配合尺寸需注公差。\n(4) 待核实事项：①材料实际收缩率及其各向异性，因为模拟区间较宽，直接影响型腔尺寸；②侧凹的圆角、脱模斜度和深度是否允许强制脱模或必须侧向抽芯；③内隔板与盒壁连接处的圆角、壁厚均匀性及缩痕风险；④外观面的具体要求和表面粗糙度；⑤生产批量、模具寿命、注塑机规格；⑥企业未注拔模斜度、未注圆角、未注公差的具体数值。至少列出三项并说明不能仅凭制件图确定的原因即可。",
+        "options": ""
+      },
+      "design": {
+        "kind": "GENERAL",
+        "criticalClaims": [
+          "主分型面通常选在制件最大轮廓处，并保证开模后制件能顺利脱模；无盖盒形件常选盒口端面。",
+          "侧凹方向与主脱模方向垂直时形成侧向倒扣，一般需要侧向抽芯或侧向分型。",
+          "内隔板若平行于主脱模方向且无倒扣，可随型芯成型，不必然需要侧向机构。",
+          "制件图标注制品名义尺寸、公差和外观要求；收缩率、型腔工作尺寸等属于模具设计参数，不直接标注在制件图上。",
+          "拔模斜度、未注圆角、未注公差通常在技术要求中统一说明。",
+          "剖视选择应保证内部结构表达清楚：内隔板用剖视，侧凹用局部剖或局部视图。"
+        ],
+        "performanceEvidence": "考生能根据盒形件结构确定主脱模方向和主分型面；能识别侧凹为侧向倒扣并判断需侧向抽芯；能区分制件图标注与模具设计参数；能规划主视图、俯视图和剖视表达内隔板与侧凹；能列出须与工艺方核实的收缩率、拔模斜度、圆角等条件。",
+        "misconceptions": [
+          "把分型面选在侧凹处或盒底，导致侧凹无法脱模或制件留在定模。",
+          "认为侧凹无需侧向抽芯，可直接强行脱模而不评估材料变形。",
+          "认为内隔板一定需要侧向抽芯。",
+          "把收缩率直接标注在制件图上作为制品尺寸的一部分。",
+          "所有内部结构都用同一全剖视图表达，忽视侧凹应局部表达。",
+          "把未注拔模斜度、未注圆角写成确定数值而不说明待核实。"
+        ],
+        "syntheticGivens": [
+          "材料为PP（模拟）",
+          "外形长120.0 mm、宽80.0 mm、总深30.0 mm、平均壁厚2.0 mm（模拟名义尺寸）",
+          "两条内隔板厚2.0 mm、高24.0 mm、沿长度方向三等分（模拟）",
+          "长侧壁有矩形侧凹，长40.0 mm、深3.0 mm、距盒口5.0~15.0 mm（模拟）",
+          "外表面为外观面，内表面为非外观面",
+          "未注拔模斜度、未注圆角、未注公差按企业通用要求处理，具体数值待核实",
+          "所有尺寸为模拟名义尺寸，未考虑收缩与拔模"
+        ],
+        "unresolvedFacts": [
+          "材料实际收缩率及其各向异性",
+          "企业未注拔模斜度、未注圆角、未注公差的准确数值",
+          "外观面的具体表面粗糙度要求和可接受的缺陷限度",
+          "侧凹是否允许强制脱模及材料允许伸长率",
+          "生产批量、模具寿命和注塑机规格"
+        ],
+        "pipelineVersion": "OPEN_ASSESSMENT_V2",
+        "answerability": "依据脱模方向与分型面选择原则、剖视表达规则及注塑件壁厚、圆角与公差常识判定；题干完整给出构件情境，允许多种可行方案并需说明权衡与待核实条件。",
+        "requiredMaterial": "PROVIDED_TEXT",
+        "AuthorResearch": [],
+        "SolveResearch": [],
+        "JudgeResearch": []
+      },
+      "review": {
+        "passed": false,
+        "available": false,
+        "discriminationScore": 0,
+        "outsiderSolvableScore": 0,
+        "flags": [
+          "PROFESSIONAL_REVIEW_UNAVAILABLE"
+        ],
+        "feedback": "开放命题阶段未完成（IllegalStateException），请检查服务日志后重试审核",
+        "optionReviews": []
+      },
+      "error_message": "开放命题阶段未完成（IllegalStateException），请检查服务日志后重试审核",
+      "updated_at": "2026-09-27T13:56:24.734483+08:00"
+    }
+  ]
+}

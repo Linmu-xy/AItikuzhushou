@@ -40,8 +40,9 @@ public class ExamProjectQuestionReviewService {
   public ReviewItem review(UUID projectId, UUID runId, UUID itemId, ReviewRequest request) {
     if (request == null) throw new IllegalArgumentException("审核请求不能为空");
     ItemState current = load(projectId, runId, itemId);
+    if ("REVIEW_RETRYING".equals(current.errorCode())) throw new IllegalArgumentException("AI 正在重新审题，请稍后再编辑");
     ensureHistory(current);
-    if (request.expectedVersion() != null && request.expectedVersion() != current.questionVersion()) {
+    if (request.expectedVersion() == null || request.expectedVersion() != current.questionVersion()) {
       throw new IllegalStateException("题目已被其他操作更新，请刷新后再审核");
     }
     String decision = normalizeDecision(request.decision());
@@ -57,20 +58,21 @@ public class ExamProjectQuestionReviewService {
     if ("REJECT".equals(decision) && clean(request.comment()).isBlank()) {
       throw new IllegalArgumentException("驳回题目时必须填写原因");
     }
-    if ("APPROVED".equals(current.status()) && !Set.of("APPROVE", "REOPEN").contains(decision)) {
+    if ("APPROVED".equals(current.status()) && !"REOPEN".equals(decision)) {
       throw new IllegalArgumentException("题目已通过，请先重新打开审核再编辑或驳回");
     }
 
+    if ("REOPEN".equals(decision) && !isEmpty(request.question())) throw new IllegalArgumentException("重新打开审核时不能同时修改题目");
     boolean edited = !isEmpty(request.question());
     Map<String, Object> nextQuestion = edited ? mergeQuestion(current, request.question()) : current.question();
-    if (edited || "APPROVE".equals(decision)) validateQuestion(current, nextQuestion);
+    if ("APPROVE".equals(decision)) validateQuestion(current, nextQuestion);
     String nextStatus = nextStatus(current.status(), decision);
     String comment = request.comment() == null ? current.reviewComment() : clean(request.comment());
     int nextVersion = edited ? current.questionVersion() + 1 : current.questionVersion();
     Instant now = Instant.now();
     UUID actor = access.currentUserId();
-    int changed = jdbc.update("update exam_project_generation_items set status=?,question_json=?,question_version=?,reviewer_id=?,review_comment=?,reviewed_at=?,updated_at=? where id=? and run_id=? and question_version=?",
-        nextStatus, write(nextQuestion), nextVersion, actor, nullIfBlank(comment), Timestamp.from(now), Timestamp.from(now), itemId, runId, current.questionVersion());
+    int changed = jdbc.update("update exam_project_generation_items set status=?,question_json=?,question_version=?,reviewer_id=?,review_comment=?,reviewed_at=?,updated_at=? where id=? and run_id=? and question_version=? and status=? and (error_code is null or error_code<>'REVIEW_RETRYING')",
+        nextStatus, write(nextQuestion), nextVersion, actor, nullIfBlank(comment), Timestamp.from(now), Timestamp.from(now), itemId, runId, current.questionVersion(), current.status());
     if (changed != 1) throw new IllegalStateException("题目已被其他操作更新，请刷新后再审核");
     if (edited) {
       jdbc.update("insert into exam_project_question_versions(id,generation_item_id,version,question_json,design_json,evidence_json,change_type,change_summary,actor_id,created_at) values(?,?,?,?,?,?,?,?,?,?)",
@@ -165,26 +167,24 @@ public class ExamProjectQuestionReviewService {
     next.put("sequence", current.sequenceNo());
     next.put("type", current.questionType());
     next.put("points", current.points());
+    if (next.get("scoringItems") instanceof List<?> rows && !rows.isEmpty()) {
+      next.put("scoringRubric", rows.stream().filter(Map.class::isInstance).map(value -> {
+        Map<?,?> row=(Map<?,?>) value;
+        return text(row.get("criterion")) + "（" + text(row.get("points")) + "分）";
+      }).collect(java.util.stream.Collectors.joining("；")));
+    }
     return next;
   }
 
   private void validateQuestion(ItemState current, Map<String, Object> question) {
-    String stem = text(question.get("stem"));
-    String answer = text(question.get("answer"));
-    if (stem.length() < 8) throw new IllegalArgumentException("题干至少需要 8 个字符");
-    if (answer.isBlank()) throw new IllegalArgumentException("答案不能为空");
-    if (text(question.get("sourceRef")).isBlank() || text(question.get("sourceExcerpt")).isBlank()) {
+    String pipeline = text(readMap(current.designJson()).get("pipelineVersion"));
+    if (!KnowledgeAssessmentPlanningService.isOpen(pipeline)
+        && (text(question.get("sourceRef")).isBlank() || text(question.get("sourceExcerpt")).isBlank())) {
       throw new IllegalArgumentException("不得删除资料来源和来源片段");
     }
-    String type = current.questionType();
-    String options = text(question.get("options"));
-    if ("SINGLE_CHOICE".equals(type)) {
-      if (options.split("\\s*\\|\\s*").length != 4 || !answer.matches("[A-D]")) throw new IllegalArgumentException("单选题必须保留四个选项和 A-D 单一答案");
-    } else if ("MULTIPLE_CHOICE".equals(type)) {
-      if (options.split("\\s*\\|\\s*").length != 4 || !answer.matches("[A-D](?:[、,，][A-D])+")) throw new IllegalArgumentException("多选题必须保留四个选项和两个以上答案");
-    } else if ("TRUE_FALSE".equals(type) && !Set.of("正确", "错误").contains(answer)) {
-      throw new IllegalArgumentException("判断题答案只能是正确或错误");
-    }
+    var blockers = QuestionQualityChecks.inspect(question,current.questionType(),current.points()).stream()
+        .filter(issue -> "ERROR".equals(issue.severity())).map(QuestionQualityChecks.Issue::message).toList();
+    if (!blockers.isEmpty()) throw new IllegalArgumentException(String.join("；",blockers));
   }
 
   private void refreshRun(UUID runId) {

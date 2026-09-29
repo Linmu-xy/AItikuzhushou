@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tikuzhushou.document.ObjectStorageService;
 import com.tikuzhushou.identity.KnowledgeBaseAccessService;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +20,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.rendering.ImageType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -37,6 +43,8 @@ public class CadAnalysisService {
   private final long timeoutSeconds;
   private final double deflection;
   private final int maxTriangles;
+  private final int drawingDpi;
+  private final int drawingMaxPages;
 
   public CadAnalysisService(JdbcTemplate jdbc, ObjectMapper json, CadMaterialService materials,
       KnowledgeBaseAccessService access, ObjectStorageService storage,
@@ -46,7 +54,9 @@ public class CadAnalysisService {
       @Value("${app.cad.work-root:./cad-work}") String workRoot,
       @Value("${app.cad.timeout-seconds:300}") long timeoutSeconds,
       @Value("${app.cad.deflection:0.5}") double deflection,
-      @Value("${app.cad.max-triangles:250000}") int maxTriangles) {
+      @Value("${app.cad.max-triangles:250000}") int maxTriangles,
+      @Value("${app.cad.drawing-dpi:300}") int drawingDpi,
+      @Value("${app.cad.drawing-max-pages:40}") int drawingMaxPages) {
     this.jdbc = jdbc;
     this.json = json;
     this.materials = materials;
@@ -59,6 +69,8 @@ public class CadAnalysisService {
     this.timeoutSeconds = Math.max(10, timeoutSeconds);
     this.deflection = Math.max(0.001, deflection);
     this.maxTriangles = Math.max(1_000, maxTriangles);
+    this.drawingDpi = Math.max(220, Math.min(400, drawingDpi));
+    this.drawingMaxPages = Math.max(1, Math.min(120, drawingMaxPages));
   }
 
   public AnalysisJob createJob(UUID materialId, UUID workflowTaskId) {
@@ -100,10 +112,20 @@ public class CadAnalysisService {
         return fail(job, "CAD_WORKER_NO_RESULT", limit("CAD Worker 未生成分析结果。" + console, 2000));
       }
       Map<String, Object> result = json.readValue(Files.readString(output), new TypeReference<>() { });
+      if ("PDF".equalsIgnoreCase(material.format())) {
+        try {
+          result.put("drawingPages", renderDrawingPages(material.id(), job.id(), input, runRoot));
+        } catch (Exception renderError) {
+          addWarning(result, "PDF 高清图纸渲染失败：" + rootMessage(renderError));
+          result.put("drawingPages", List.of());
+        }
+      } else {
+        result.putIfAbsent("drawingPages", List.of());
+      }
       String status = Objects.toString(result.get("status"), "FAILED");
       String parser = Objects.toString(result.get("parser"), "cad-worker");
       String analysisKey = "cad_analysis_" + job.id() + ".json";
-      byte[] analysisBytes = Files.readAllBytes(output);
+      byte[] analysisBytes = json.writeValueAsBytes(result);
       String analysisStored = storage.put(analysisKey, new java.io.ByteArrayInputStream(analysisBytes), analysisBytes.length, "application/json");
       String previewKey = null;
       String previewStoredKey = null;
@@ -126,6 +148,7 @@ public class CadAnalysisService {
       response.put("previewAvailable", previewKey != null);
       response.put("facts", result.getOrDefault("facts", List.of()));
       response.put("annotations", result.getOrDefault("annotations", List.of()));
+      response.put("drawingPages", result.getOrDefault("drawingPages", List.of()));
       response.put("warnings", result.getOrDefault("warnings", List.of()));
       return response;
     } catch (Exception error) {
@@ -147,13 +170,15 @@ public class CadAnalysisService {
     CadMaterialService.Material material = materials.get(materialId);
     List<AnalysisJob> jobs = jdbc.query("select id,material_id,workflow_task_id,parser,status,result_json,analysis_storage_key,preview_storage_key,error_code,error_message,created_at,updated_at from cad_analysis_jobs where material_id=? order by created_at desc",
         (rs, row) -> mapJob(rs), material.id());
-    if (jobs.isEmpty()) return new AnalysisView(material, null, List.of(), List.of());
+    if (jobs.isEmpty()) return new AnalysisView(material, null, List.of(), List.of(), List.of());
     AnalysisJob job = jobs.getFirst();
     List<Fact> facts = jdbc.query("select id,material_id,analysis_job_id,fact_name,value_json,unit,source_ref,confidence,verified,usable_for_generation,verification_note,verified_by,verified_at,created_at from cad_facts where analysis_job_id=? order by created_at,id",
         (rs, row) -> mapFact(rs), job.id());
     List<Annotation> annotations = jdbc.query("select id,material_id,analysis_job_id,annotation_kind,page_number,value_json,source_ref,confidence,verified,usable_for_generation,verification_note,verified_by,verified_at,created_at from cad_annotations where analysis_job_id=? order by page_number,id",
         (rs, row) -> mapAnnotation(rs), job.id());
-    return new AnalysisView(material, job, facts, annotations);
+    List<PreviewAsset> previewAssets = jdbc.query("select id,material_id,analysis_job_id,asset_type,page_number,media_type,storage_key,size_bytes,created_at from cad_preview_assets where analysis_job_id=? order by page_number,id",
+        (rs, row) -> mapPreviewAsset(rs), job.id());
+    return new AnalysisView(material, job, facts, annotations, previewAssets);
   }
 
   public Fact verifyFact(UUID factId, boolean verified, boolean usableForGeneration, String note) {
@@ -178,6 +203,48 @@ public class CadAnalysisService {
         (rs, row) -> rs.getString(1), materialId, assetType);
     if (keys.isEmpty()) throw new IllegalArgumentException("预览文件不存在");
     return storage.materialize(keys.getFirst(), ".obj");
+  }
+
+  public Path materializeDrawingPage(UUID materialId, int page) throws Exception {
+    if (page < 1) throw new IllegalArgumentException("图纸页码必须从 1 开始");
+    materials.get(materialId);
+    List<String> keys = jdbc.query("select storage_key from cad_preview_assets where material_id=? and asset_type='DRAWING_PAGE' and page_number=? order by created_at desc",
+        (rs, row) -> rs.getString(1), materialId, page);
+    if (keys.isEmpty()) throw new IllegalArgumentException("图纸页面不存在");
+    return storage.materialize(keys.getFirst(), ".png");
+  }
+
+  private List<Map<String, Object>> renderDrawingPages(UUID materialId, UUID analysisJobId, Path input, Path runRoot) throws Exception {
+    List<Map<String, Object>> pages = new ArrayList<>();
+    try (var document = Loader.loadPDF(input.toFile())) {
+      int pageCount = Math.min(document.getNumberOfPages(), drawingMaxPages);
+      PDFRenderer renderer = new PDFRenderer(document);
+      for (int index = 0; index < pageCount; index++) {
+        BufferedImage image = renderer.renderImageWithDPI(index, drawingDpi, ImageType.RGB);
+        Path pagePath = runRoot.resolve(String.format("drawing-page-%03d.png", index + 1));
+        if (!ImageIO.write(image, "png", pagePath.toFile())) throw new IllegalStateException("JVM 未安装 PNG 编码器");
+        byte[] bytes = Files.readAllBytes(pagePath);
+        UUID assetId = UUID.randomUUID();
+        String key = "cad_drawing_page_" + analysisJobId + "_" + (index + 1) + ".png";
+        String stored = storage.put(key, new ByteArrayInputStream(bytes), bytes.length, "image/png");
+        jdbc.update("insert into cad_preview_assets(id,material_id,analysis_job_id,asset_type,page_number,media_type,storage_key,size_bytes,created_at) values(?,?,?,?,?,?,?,?,?)",
+            assetId, materialId, analysisJobId, "DRAWING_PAGE", index + 1, "image/png", stored, bytes.length, Timestamp.from(Instant.now()));
+        pages.add(Map.of("assetId", assetId, "page", index + 1, "width", image.getWidth(), "height", image.getHeight(),
+            "dpi", drawingDpi, "mediaType", "image/png"));
+      }
+      if (document.getNumberOfPages() > drawingMaxPages) {
+        pages.add(Map.of("warning", "图纸页数超过上限，仅渲染前 " + drawingMaxPages + " 页"));
+      }
+    }
+    return pages;
+  }
+
+  private void addWarning(Map<String, Object> result, String warning) {
+    List<Object> warnings = new ArrayList<>();
+    Object current = result.get("warnings");
+    if (current instanceof List<?> values) warnings.addAll(values);
+    warnings.add(warning);
+    result.put("warnings", warnings);
   }
 
   private void persistFacts(AnalysisJob job, UUID materialId, Map<String, Object> result) throws Exception {
@@ -263,6 +330,13 @@ public class CadAnalysisService {
         rs.getTimestamp("verified_at") == null ? null : rs.getTimestamp("verified_at").toInstant(), rs.getTimestamp("created_at").toInstant());
   }
 
+  private PreviewAsset mapPreviewAsset(java.sql.ResultSet rs) throws java.sql.SQLException {
+    return new PreviewAsset(rs.getObject("id", UUID.class), rs.getObject("material_id", UUID.class),
+        rs.getObject("analysis_job_id", UUID.class), rs.getString("asset_type"),
+        rs.getObject("page_number", Integer.class), rs.getString("media_type"),
+        rs.getLong("size_bytes"), rs.getTimestamp("created_at").toInstant());
+  }
+
   private Map<String, Object> toStringMap(Map<?, ?> value) {
     Map<String, Object> result = new LinkedHashMap<>();
     value.forEach((key, item) -> result.put(String.valueOf(key), item));
@@ -282,6 +356,8 @@ public class CadAnalysisService {
   public record Annotation(UUID id, UUID materialId, UUID analysisJobId, String kind, Integer pageNumber,
       String valueJson, String sourceRef, double confidence, boolean verified, boolean usableForGeneration,
       String verificationNote, UUID verifiedBy, Instant verifiedAt, Instant createdAt) { }
+  public record PreviewAsset(UUID id, UUID materialId, UUID analysisJobId, String assetType, Integer pageNumber,
+      String mediaType, long sizeBytes, Instant createdAt) { }
   public record AnalysisView(CadMaterialService.Material material, AnalysisJob job, List<Fact> facts,
-      List<Annotation> annotations) { }
+      List<Annotation> annotations, List<PreviewAsset> previewAssets) { }
 }

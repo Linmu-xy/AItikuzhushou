@@ -155,7 +155,7 @@ public class ExamProjectVariantGenerationService {
       if (design.get("ReviewRetries") instanceof List<?> prior) reviewRetries.addAll(prior);
       reviewRetries.add(Map.of("review", item.review(), "status", item.status(), "at", Instant.now().toString()));
       design.put("ReviewRetries", reviewRetries);
-      for (String key : List.of("AuthorResearch", "SolveResearch", "JudgeResearch", "IndependentSolution", "Judgment", "FirstReview", "PriorAttempt"))
+      for (String key : List.of("AuthorResearch", "SolveResearch", "JudgeResearch", "IndependentSolution", "Judgment", "FirstReview", "PriorAttempt", "Execution", "ExecutionVersion"))
         if (design.containsKey(key)) question.put("_assessment" + key, design.get(key));
       if (OpenAssessmentService.supports(question)) question.put("_assessmentResearchBudget", new OpenAssessmentService.ResearchBudget(2));
       List<QuestionProfessionalReviewService.Review> result = reviewer.review(List.of(question));
@@ -278,7 +278,7 @@ public class ExamProjectVariantGenerationService {
       QuestionRefinementService.Candidate candidate = index < first.size()
           ? first.get(index) : new QuestionRefinementService.Candidate(drafts.get(index), false, false, 0, "模型未返回该题位");
       int attempts = 1;
-      if (!candidate.valid()) {
+      if (!candidate.valid() && !Boolean.TRUE.equals(candidate.question().get("_assessmentNoAutoRewrite"))) {
         Map<String, Object> retry = new LinkedHashMap<>(drafts.get(index));
         retry.put("fullRewriteOnly", true);
         retry.put("retryFeedback", candidate.failureReason());
@@ -319,7 +319,7 @@ public class ExamProjectVariantGenerationService {
       design.put("answerability", text(candidate.question().get("_assessmentAnswerability")));
       design.put("requiredMaterial", text(candidate.question().get("_assessmentRequiredMaterial")));
       for (String key : List.of("AuthorResearch", "SolveResearch", "JudgeResearch", "IndependentSolution",
-          "Judgment", "FirstReview", "PriorAttempt", "RepairFailure")) {
+          "Judgment", "FirstReview", "PriorAttempt", "RepairFailure", "Execution", "ExecutionVersion")) {
         Object value = candidate.question().get("_assessment" + key);
         if (value != null) design.put(key, value);
       }

@@ -1,0 +1,613 @@
+{
+  "schemaVersion": 1,
+  "kind": "engineering-regression-not-teacher-gold",
+  "base": {
+    "question": {
+      "sequence": 1,
+      "type": "SHORT_ANSWER",
+      "difficulty": "MEDIUM",
+      "stem": "解释为何设置对照组，并说明控制哪些条件。",
+      "answer": "控制温度等条件以检验目标因素。",
+      "scoringRubric": "说明控制温度以隔离目标因素，接受等价合理方案。"
+    },
+    "solution": {
+      "answer": "保持温度不变并比较两组",
+      "answerable": true,
+      "ambiguities": [],
+      "unresolvedFacts": []
+    },
+    "judgment": {
+      "status": "PASS",
+      "checks": {
+        "correctness": "PASS",
+        "answerability": "PASS",
+        "alignment": "PASS",
+        "rubric": "PASS",
+        "diversity": "PASS",
+        "criticalFacts": "PASS",
+        "independentAgreement": "PASS"
+      },
+      "optionChecks": {
+        "A": "PASS",
+        "B": "PASS",
+        "C": "PASS",
+        "D": "PASS"
+      },
+      "flags": [],
+      "surfaceShortcut": false,
+      "counterexampleCheck": {
+        "alternative": "等价控制方案均可得分",
+        "valid": true,
+        "excludedByRubric": false
+      },
+      "issueResolutions": [],
+      "feedback": "",
+      "discriminationScore": 80,
+      "outsiderSolvableScore": 10
+    }
+  },
+  "cases": [
+    {
+      "id": "open-equivalent-methods",
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    },
+    {
+      "id": "cad-pass-with-informational-flag",
+      "judgment": {
+        "flags": [
+          "盲解(a)与(b)自相矛盾，但作者答案与评分标准正确，不影响通过"
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "REVIEW_PROTOCOL_CONFLICT"
+        ]
+      }
+    },
+    {
+      "id": "missing-correctness-check",
+      "judgment": {
+        "checks": {
+          "correctness": null
+        }
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "ASSESSMENT_CORRECTNESS_MISSING"
+        ]
+      }
+    },
+    {
+      "id": "explicit-correctness-failure",
+      "judgment": {
+        "status": "REWRITE",
+        "checks": {
+          "correctness": "FAIL"
+        },
+        "flags": [
+          "所用公式基准错误"
+        ]
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "ASSESSMENT_CORRECTNESS_FAILED"
+        ]
+      }
+    },
+    {
+      "id": "pass-cannot-mask-correctness-failure",
+      "judgment": {
+        "checks": {
+          "correctness": "FAIL"
+        }
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "ASSESSMENT_CORRECTNESS_FAILED"
+        ]
+      }
+    },
+    {
+      "id": "invalid-review-status",
+      "judgment": {
+        "status": "APPROVED"
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "REVIEW_STATUS_INVALID"
+        ]
+      }
+    },
+    {
+      "id": "rewrite-without-failed-check",
+      "judgment": {
+        "status": "REWRITE",
+        "flags": [
+          "建议优化表达"
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "REVIEW_PROTOCOL_CONFLICT"
+        ]
+      }
+    },
+    {
+      "id": "excluded-valid-alternative",
+      "judgment": {
+        "counterexampleCheck": {
+          "excludedByRubric": true
+        }
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "VALID_ALTERNATIVE_EXCLUDED"
+        ]
+      }
+    },
+    {
+      "id": "missing-counterexample-proof",
+      "judgment": {
+        "counterexampleCheck": {
+          "alternative": ""
+        }
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "COUNTEREXAMPLE_CHECK_MISSING"
+        ]
+      }
+    },
+    {
+      "id": "missing-shortcut-check",
+      "judgment": {
+        "surfaceShortcut": null
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "SURFACE_CHALLENGE_MISSING"
+        ]
+      }
+    },
+    {
+      "id": "medium-wording-shortcut",
+      "judgment": {
+        "surfaceShortcut": true
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "SURFACE_SHORTCUT"
+        ]
+      }
+    },
+    {
+      "id": "biology-controlled-variable-unanswerable",
+      "solution": {
+        "answerable": false
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "INDEPENDENT_ANSWER_UNRESOLVED"
+        ]
+      }
+    },
+    {
+      "id": "choice-blind-answer-mismatch",
+      "question": {
+        "type": "SINGLE_CHOICE",
+        "answer": "B"
+      },
+      "solution": {
+        "answer": "C"
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "INDEPENDENT_ANSWER_MISMATCH"
+        ]
+      }
+    },
+    {
+      "id": "choice-invalid-option-proof",
+      "question": {
+        "type": "SINGLE_CHOICE",
+        "answer": "B"
+      },
+      "solution": {
+        "answer": "B"
+      },
+      "judgment": {
+        "optionChecks": {
+          "D": null
+        }
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "OPTION_D_MISSING"
+        ]
+      }
+    },
+    {
+      "id": "choice-explicit-option-failure",
+      "question": {
+        "type": "SINGLE_CHOICE",
+        "answer": "B"
+      },
+      "solution": {
+        "answer": "B"
+      },
+      "judgment": {
+        "optionChecks": {
+          "D": "FAIL"
+        }
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "OPTION_D_FAILED"
+        ]
+      }
+    },
+    {
+      "id": "multichoice-order-equivalence",
+      "question": {
+        "type": "MULTIPLE_CHOICE",
+        "answer": "A、C"
+      },
+      "solution": {
+        "answer": "C,A"
+      },
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    },
+    {
+      "id": "true-false-kept-supported",
+      "question": {
+        "type": "TRUE_FALSE",
+        "answer": "正确"
+      },
+      "solution": {
+        "answer": "TRUE"
+      },
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    },
+    {
+      "id": "no-flags-field",
+      "judgment": {
+        "flags": null
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "REVIEW_FLAGS_MISSING"
+        ]
+      }
+    },
+    {
+      "id": "invalid-flag-object",
+      "judgment": {
+        "flags": [
+          {
+            "note": "不可当作字符串错误"
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "REVIEW_FLAGS_INVALID"
+        ]
+      }
+    },
+    {
+      "id": "unclosed-issue-is-pending",
+      "solution": {
+        "ambiguities": [
+          "温度是否受控"
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "ISSUES_NOT_RESOLVED"
+        ]
+      }
+    },
+    {
+      "id": "fabricated-quote-is-pending",
+      "solution": {
+        "ambiguities": [
+          "温度是否受控"
+        ]
+      },
+      "judgment": {
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "STEM_COVERS",
+            "reason": "题干已有",
+            "stemEvidence": [
+              "温度恒为20摄氏度"
+            ],
+            "rubricEvidence": []
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "ISSUES_NOT_RESOLVED"
+        ]
+      }
+    },
+    {
+      "id": "explicit-issue-needs-change",
+      "solution": {
+        "ambiguities": [
+          "温度是否受控"
+        ]
+      },
+      "judgment": {
+        "status": "REWRITE",
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "NEEDS_CHANGE",
+            "reason": "决定变量影响",
+            "stemEvidence": [],
+            "rubricEvidence": []
+          }
+        ]
+      },
+      "expected": {
+        "available": true,
+        "passed": false,
+        "requiredFlags": [
+          "ISSUES_NOT_RESOLVED"
+        ]
+      }
+    },
+    {
+      "id": "quoted-rubric-accepts-alternative",
+      "solution": {
+        "ambiguities": [
+          "不同控制方案"
+        ]
+      },
+      "judgment": {
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "RUBRIC_ACCEPTS",
+            "reason": "评分接纳",
+            "stemEvidence": [],
+            "rubricEvidence": [
+              "接受等价合理方案"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    },
+    {
+      "id": "math-pure-algebra-outside-source",
+      "question": {
+        "type": "CALCULATION",
+        "stem": "某物品原价80元，打九折后的价格是多少？",
+        "answer": "72元"
+      },
+      "solution": {
+        "answer": "80×0.9=72元"
+      },
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    },
+    {
+      "id": "calculation-rubric-tolerance-does-not-define-model",
+      "question": {
+        "type": "CALCULATION",
+        "stem": "某模拟制品名义长度120mm，收缩率为1.5%，求型腔长度。",
+        "scoringRubric": "正确计算型腔长度约121.80mm得分，接受等价过程。"
+      },
+      "solution": {
+        "answer": "121.80mm或者按另一基准121.83mm",
+        "ambiguities": [
+          "收缩率的分母基准未定义"
+        ]
+      },
+      "judgment": {
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "RUBRIC_ACCEPTS",
+            "reason": "结果近似，容差接受",
+            "stemEvidence": [],
+            "rubricEvidence": [
+              "约121.80mm得分",
+              "接受等价过程"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "NUMERIC_ASSUMPTIONS_REQUIRE_STEM_EVIDENCE"
+        ]
+      }
+    },
+    {
+      "id": "live-v23-cad-q2-rubric-ambiguity-replay",
+      "question": {
+        "type": "CALCULATION",
+        "stem": "某注塑盒形件采用PP材料，以下数值均为模拟值，非实测或标准规定值。制品分型面处外长 L0=120.0 mm（该处为脱模方向尺寸最大处）；制品深度 H=40.0 mm；侧壁单侧拔模斜度 α=1°，方向为沿深度向分型面扩大。材料收缩率范围为1.2%~1.8%。不计模具制造公差和修模余量。请：（1）确定计算用收缩率并说明依据；（2）计算该盒形件长度方向在分型面处的模具型腔工作尺寸；（3）计算型腔底部对应长度方向的工作尺寸；（4）说明拔模斜度对该长度方向尺寸的影响，以及为什么不能直接把制品名义外长120.0 mm作为型腔尺寸。tan1°≈0.017455。",
+        "answer": "取平均收缩率 S=(1.2%+1.8%)/2=1.5%=0.015。分型面处型腔长度工作尺寸 Lm=120.0×(1+0.015)=121.80 mm。底部制品长度 Lb=120.0-2×40.0×tan1°≈120.0-1.3964=118.6036 mm；底部型腔长度 Lmb=118.6036×(1+0.015)≈120.38 mm（也可由121.80-2×40.0×(1+0.015)×tan1°≈120.38 mm得到）。拔模斜度使长度方向尺寸沿深度不是常数：分型面处最大，底部较小，型腔上下差约1.42 mm；因此不能把120.0直接作型腔尺寸，且因收缩，型腔应比制品名义尺寸放大，实际收缩率应结合材料牌号、壁厚、流动方向、成型条件并试模修正。",
+        "scoringRubric": "正确取平均收缩率1.5%并说明区间取中值及试模修正依据（2分）；分型面处型腔长度计算为121.80 mm（含正确公式或等价过程）（2分）；底部型腔长度计算为约120.38 mm，或正确给出底部制品长度118.60 mm并按收缩换算（3分）；说明拔模斜度使长度沿深度变化、分型面处大于底部，不能直接用120.0作型腔尺寸（3分）。总分：10分。"
+      },
+      "solution": {
+        "action": "FINAL",
+        "answer": "(1) 计算用收缩率取1.5%（1.2%~1.8%的中值，模拟值无实测依据时的常用取值）；(2) 分型面处型腔长度工作尺寸≈121.80 mm；(3) 型腔底部对应长度方向工作尺寸≈120.41 mm；(4) 拔模斜度使型腔沿深度向分型面扩大，底部尺寸小于分型面尺寸；不能直接用120.0 mm作型腔尺寸，因为需补偿PP收缩，且分型面处是脱模方向最大尺寸、底部还受拔模斜度影响。",
+        "solution": "取收缩率S=1.5%（范围中值，题给模拟值未指定实测值）。分型面处为脱模方向最大尺寸，型腔对应尺寸按L0(1+S)=120.0×1.015=121.80 mm。底部对应长度方向：分型面处比底部单侧大H·tanα，故底部型腔长度=(L0-2H·tanα)(1+S)=(120.0-2×40.0×0.017455)×1.015=(120.0-1.3964)×1.015=118.6036×1.015≈120.38 mm（按先减拔模量再乘收缩率）。若按先算分型面型腔再减拔模量，则121.80-1.3964≈120.40 mm；两种次序因收缩率作用于拔模量与否略有差异，题面未明确收缩率基准，故底部尺寸约120.4 mm。拔模斜度使型腔侧壁沿深度向分型面扩大，底部尺寸小于分型面尺寸；不能直接用120.0 mm，因为型腔须补偿PP收缩，且分型面处为最大脱模尺寸、底部还须扣除拔模斜度。",
+        "answerable": true,
+        "ambiguities": [
+          "收缩率基准未明确：按制品名义尺寸还是按型腔尺寸计算收缩补偿，会影响底部尺寸约0.02 mm。",
+          "底部尺寸计算次序未明确：先扣拔模量再乘收缩率，或先算分型面型腔再扣拔模量，结果略有差异。"
+        ],
+        "unresolvedFacts": [],
+        "calculations": [
+          {
+            "quantity": "分型面处型腔长度工作尺寸(mm)",
+            "expression": "120.0*(1+0.015)",
+            "expected": "121.80",
+            "decimals": 2
+          },
+          {
+            "quantity": "型腔底部对应长度方向工作尺寸(mm)",
+            "expression": "(120.0-2*40.0*0.017455)*(1+0.015)",
+            "expected": "120.38",
+            "decimals": 2
+          }
+        ]
+      },
+      "judgment": {
+        "action": "FINAL",
+        "status": "PASS",
+        "checks": {
+          "correctness": "PASS",
+          "answerability": "PASS",
+          "alignment": "PASS",
+          "rubric": "PASS",
+          "diversity": "PASS",
+          "criticalFacts": "PASS",
+          "independentAgreement": "PASS"
+        },
+        "optionChecks": {},
+        "discriminationScore": 72,
+        "outsiderSolvableScore": 18,
+        "flags": [],
+        "surfaceShortcut": false,
+        "shortcutReason": "需理解收缩率补偿、拔模斜度几何与分型面/底部基准差异，无法仅凭数字异类或词句匹配猜中；底部尺寸须自行推导。",
+        "counterexampleCheck": {
+          "alternative": "底部尺寸按先算分型面型腔再扣拔模量：121.80-2×40×tan1°≈120.40 mm，与答案120.38 mm相差0.02 mm。",
+          "valid": true,
+          "excludedByRubric": false
+        },
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "RUBRIC_ACCEPTS",
+            "reason": "收缩率基准差异仅约0.02 mm，评分以'约120.38 mm'及'正确给出底部制品长度118.60 mm并按收缩换算'接纳等价过程，不因基准次序判错。",
+            "stemEvidence": [
+              "材料收缩率范围为1.2%~1.8%",
+              "不计模具制造公差和修模余量"
+            ],
+            "rubricEvidence": [
+              "底部型腔长度计算为约120.38 mm，或正确给出底部制品长度118.60 mm并按收缩换算（3分）"
+            ]
+          },
+          {
+            "id": "A2",
+            "status": "RUBRIC_ACCEPTS",
+            "reason": "两种计算次序结果差0.02 mm，评分用'约'与'等价过程'容纳，不要求唯一次序。",
+            "stemEvidence": [
+              "侧壁单侧拔模斜度 α=1°，方向为沿深度向分型面扩大"
+            ],
+            "rubricEvidence": [
+              "底部型腔长度计算为约120.38 mm，或正确给出底部制品长度118.60 mm并按收缩换算（3分）"
+            ]
+          }
+        ],
+        "feedback": "题目条件充分、参考答案正确、评分容纳合理替代次序，未发现阻断性缺陷。建议在题干中明确'收缩率按制品名义尺寸补偿'以消除0.02 mm级歧义，但不影响当前判分。"
+      },
+      "expected": {
+        "available": false,
+        "passed": false,
+        "requiredFlags": [
+          "NUMERIC_ASSUMPTIONS_REQUIRE_STEM_EVIDENCE"
+        ]
+      }
+    },
+    {
+      "id": "intentional-conditional-calculation-still-allowed",
+      "question": {
+        "type": "CALCULATION",
+        "stem": "题目未定义百分比的基准，请分别说明两种基准下的结果。",
+        "scoringRubric": "分别说明两种基准并计算，接受两种条件性答案。"
+      },
+      "solution": {
+        "ambiguities": [
+          "百分比基准未定义，这是本题所问"
+        ]
+      },
+      "judgment": {
+        "issueResolutions": [
+          {
+            "id": "A1",
+            "status": "ASKED_UNCERTAINTY",
+            "reason": "明确要求条件性作答",
+            "stemEvidence": [
+              "请分别说明两种基准下的结果"
+            ],
+            "rubricEvidence": [
+              "接受两种条件性答案"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "available": true,
+        "passed": true,
+        "requiredFlags": []
+      }
+    }
+  ]
+}

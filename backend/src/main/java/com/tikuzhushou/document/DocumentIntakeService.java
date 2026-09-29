@@ -39,12 +39,14 @@ public class DocumentIntakeService {
         .replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fa5]", "_");
     String type = Optional.ofNullable(file.getContentType()).filter(TYPES::contains).orElseGet(() -> extension(name));
     if (type == null) throw new IllegalArgumentException("不支持的文件格式");
-    ensure(knowledgeBaseId); quota(knowledgeBaseId, file.getSize());
+    ensure(knowledgeBaseId);
     String hash = sha256(file);
     var duplicate = jdbc.query("select id,original_name from source_documents where knowledge_base_id=? and content_sha256=? order by created_at desc limit 1",
         (rs, row) -> Map.of("id", rs.getString(1), "name", rs.getString(2)), knowledgeBaseId, hash).stream().findFirst();
     if (duplicate.isPresent()) throw new IllegalArgumentException("DUPLICATE_DOCUMENT：相同内容已存在（"
-        + duplicate.get().get("name") + "，文档 " + duplicate.get().get("id") + "）");
+        + duplicate.get().get("name") + "，文档 " + duplicate.get().get("id")
+        + "）。请在资料列表查看；若解析失败或不完整，可直接点击“重新解析”。");
+    quota(knowledgeBaseId, file.getSize());
 
     UUID id = UUID.randomUUID(); String key = id + "_" + name; String path;
     try (InputStream input = file.getInputStream()) { path = storage.put(key, input, file.getSize(), type); }

@@ -81,6 +81,37 @@ class OpenAssessmentOrchestrationTests {
     verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
   }
 
+  @Test void conflictingReviewDoesNotRegenerateAndKeepsDiagnosticFlags() {
+    generate(true);
+    when(reviewer.review(anyList())).thenReturn(List.of(new QuestionProfessionalReviewService.Review(
+        1, false, 80, 10, List.of("REVIEW_PROTOCOL_CONFLICT", "PROFESSIONAL_REVIEW_UNAVAILABLE"),
+        "审查响应结论矛盾，保留原题待复核", List.of(), false)));
+    service.execute(runId);
+    var item = service.get(runId).items().getFirst();
+    assertThat(item.status()).isEqualTo("REVIEW_PENDING");
+    assertThat(item.attempts()).isEqualTo(1);
+    assertThat(item.question().get("stem")).isEqualTo("完整可用的原题");
+    assertThat(jdbc.queryForObject("select review_json from exam_project_generation_items where run_id=?", String.class, runId))
+        .contains("REVIEW_PROTOCOL_CONFLICT");
+    verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
+  }
+
+  @Test void exhaustedProtocolRecoveryDoesNotEnterSemanticRewriteLoop() {
+    when(refiner.generateCandidates(anyList(), eq("FAST"))).thenAnswer(invocation -> {
+      List<Map<String,Object>> drafts = invocation.getArgument(0);
+      var question = new LinkedHashMap<>(drafts.getFirst());
+      question.put("_assessmentNoAutoRewrite", true);
+      question.put("_assessmentExecution", List.of(Map.of("result", "TRUNCATED", "recovery", true)));
+      return List.of(new QuestionRefinementService.Candidate(question, false, false, 0, "响应未完成"));
+    });
+    service.execute(runId);
+    assertThat(service.get(runId).items().getFirst().status()).isEqualTo("FAILED");
+    verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
+    verifyNoInteractions(reviewer);
+    assertThat(jdbc.queryForObject("select design_json from exam_project_generation_items where run_id=?", String.class, runId))
+        .contains("Execution", "TRUNCATED");
+  }
+
   @Test void restartDoesNotOverwriteAlreadyReviewedOrEditedItems() {
     generate(true);
     when(reviewer.review(anyList())).thenReturn(List.of(review(true, true)));
@@ -108,6 +139,22 @@ class OpenAssessmentOrchestrationTests {
     assertThat(after.items().getFirst().questionVersion()).isEqualTo(item.questionVersion());
     verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
     verify(reviewer, times(2)).review(anyList());
+  }
+
+  @Test void reviewOnlyRetryRestoresSuccessfulRecoveryHistory() {
+    generate(true);
+    when(reviewer.review(anyList())).thenReturn(List.of(review(false, false)));
+    service.execute(runId);
+    var before = service.get(runId); var item = before.items().getFirst();
+    jdbc.update("update exam_project_generation_items set design_json=? where id=?",
+        "{\"Execution\":[{\"stage\":\"SOLVE\",\"recovery\":true,\"result\":\"RESPONSE_RECEIVED\"}],\"ExecutionVersion\":\"OLD\"}", item.id());
+    when(reviewer.review(anyList())).thenAnswer(invocation -> {
+      List<Map<String,Object>> questions = invocation.getArgument(0);
+      assertThat(questions.getFirst().get("_assessmentExecution").toString()).contains("SOLVE", "RESPONSE_RECEIVED");
+      return List.of(review(true, true));
+    });
+    service.retryReview(before.projectId(), runId, item.id());
+    verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
   }
 
   @Test void failedRepairKeepsOriginalRejectedQuestionForHumanInspection() {

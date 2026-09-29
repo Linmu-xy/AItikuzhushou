@@ -65,6 +65,14 @@
 .drawing-preview-placeholder { display: flex; align-items: center; gap: 16px; min-height: 260px; padding: 30px; border: 1px solid var(--cal-line); border-radius: 9px; background: #f8faf9; }
 .drawing-preview-placeholder p { max-width: 520px; margin: 6px 0 13px; }
 .drawing-icon { display: grid; place-items: center; width: 54px; height: 54px; flex: none; border: 1px solid var(--cal-line-strong); border-radius: 10px; color: var(--cal-brand-deep); background: var(--cal-brand-soft); font-weight: 800; }
+.drawing-pages-preview { display: grid; gap: 10px; }
+.drawing-pages-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; max-height: 650px; overflow: auto; padding: 2px; }
+.drawing-page-card { display: grid; gap: 7px; margin: 0; padding: 8px; border: 1px solid var(--cal-line); border-radius: 8px; background: #fff; }
+.drawing-page-card a { display: block; overflow: hidden; border-radius: 5px; background: #f2f5f3; }
+.drawing-page-card img { display: block; width: 100%; height: auto; max-height: 510px; object-fit: contain; }
+.drawing-page-card figcaption { color: var(--cal-muted); font-size: .72rem; text-align: center; }
+.drawing-page-loading { display: grid; place-items: center; min-height: 240px; color: var(--cal-muted); background: #f8faf9; font-size: .76rem; }
+.drawing-pages-note { margin: 0; font-size: .72rem; }
 .material-exam-inspector { display: grid; gap: 16px; }
 .material-facts-panel { min-width: 0; padding: 16px; }
 .material-facts-lede { margin: 0 0 14px; font-size: .78rem; line-height: 1.55; }

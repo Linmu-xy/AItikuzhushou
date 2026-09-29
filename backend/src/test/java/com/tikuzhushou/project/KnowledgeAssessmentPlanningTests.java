@@ -236,6 +236,31 @@ class KnowledgeAssessmentPlanningTests {
     assertThat(item.points()).isEqualTo(4);
   }
 
+  @Test void repeatedPlanningReusesOnlyUnchangedAuthorizedVisualMaterial() {
+    UUID document = UUID.randomUUID();
+    var ai = mock(DeepSeekService.class); var visuals = mock(KnowledgeVisualService.class);
+    when(ai.visionModel()).thenReturn("vision-model");
+    when(visuals.pageCount(document)).thenReturn(2);
+    when(visuals.page(document, 1, 0, 0, 100, 100)).thenReturn(new byte[]{1});
+    when(visuals.page(document, 2, 0, 0, 100, 100)).thenReturn(new byte[]{2});
+    when(ai.analyseAssessmentImagesJsonFast(anyString(), anyString(), anyList(), anyInt(), eq("ASSESSMENT_VISUAL_SURVEY")))
+        .thenReturn("{\"summary\":\"几何图形\"}");
+    when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_PLAN")))
+        .thenReturn("{\"summary\":\"应用\",\"items\":[{\"competency\":\"比例\",\"task\":\"比例推断\",\"type\":\"SHORT_ANSWER\",\"difficulty\":\"MEDIUM\"}]}");
+    var service = new KnowledgeAssessmentPlanningService(database(document), new ObjectMapper(), ai, visuals, mock(DeepSeekWebSearchService.class));
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "materialCache", new AssessmentMaterialCache());
+    var sameOwner = project();
+    service.propose(sameOwner, snapshot(document), 1, List.of());
+    service.propose(sameOwner, snapshot(document), 1, List.of());
+    verify(ai, times(2)).analyseAssessmentImagesJsonFast(anyString(), anyString(), anyList(), anyInt(), eq("ASSESSMENT_VISUAL_SURVEY"));
+    verify(ai, times(2)).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_PLAN"));
+    when(visuals.page(document, 2, 0, 0, 100, 100)).thenReturn(new byte[]{3});
+    service.propose(sameOwner, snapshot(document), 1, List.of());
+    verify(ai, times(3)).analyseAssessmentImagesJsonFast(anyString(), anyString(), anyList(), anyInt(), eq("ASSESSMENT_VISUAL_SURVEY"));
+    service.propose(project(), snapshot(document), 1, List.of());
+    verify(ai, times(5)).analyseAssessmentImagesJsonFast(anyString(), anyString(), anyList(), anyInt(), eq("ASSESSMENT_VISUAL_SURVEY"));
+  }
+
   private static JdbcTemplate database(UUID document) {
     DriverManagerDataSource source = new DriverManagerDataSource("jdbc:h2:mem:assessment-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1", "sa", "");
     JdbcTemplate jdbc = new JdbcTemplate(source);

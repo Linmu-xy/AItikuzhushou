@@ -14,6 +14,7 @@
 @import './project-setup.css' layer(legacy);
 @import './workspace-refresh.css' layer(legacy);
 @import './assistant-v2.css' layer(legacy);
+@import './profile-settings.css';
 
 :root {
   color-scheme: light;

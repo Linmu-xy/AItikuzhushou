@@ -1,0 +1,7 @@
+[
+  {"id":"knowledge-data","files":["backend/src/main/java/com/tikuzhushou/knowledge/*","backend/src/main/java/com/tikuzhushou/api/KnowledgePointController.java","backend/src/main/resources/db/migration/V46__maintainable_knowledge_points.sql"],"rationale":"Authorized, versioned maintenance with AI candidate isolation","risk":"medium"},
+  {"id":"quality-data","files":["backend/src/main/java/com/tikuzhushou/project/QuestionQuality*","backend/src/main/java/com/tikuzhushou/project/ExamProjectQuestionReviewService.java","backend/src/main/java/com/tikuzhushou/api/QuestionQualityController.java","backend/src/main/java/com/tikuzhushou/project/KnowledgeAssessmentPlanningService.java"],"rationale":"Inspect, revise, preview and save without narrowing open assessment","risk":"medium"},
+  {"id":"workspaces","files":["frontend/src/KnowledgeMaintenance.tsx","frontend/src/QuestionQualityWorkbench.tsx","frontend/src/maintenance.css","frontend/src/maintenanceApi.ts","frontend/src/ProjectSetupWorkspace.tsx"],"rationale":"Consistent responsive focused workspaces","risk":"medium"},
+  {"id":"wire-knowledge","files":["frontend/src/App.tsx"],"rationale":"User-approved knowledge workspace only, no unrelated shell changes","risk":"high"},
+  {"id":"build-test","files":["backend/src/test/**","scripts/Test-QualityMaintenance.ps1","docs/quality-maintenance.md"],"rationale":"Permissions, concurrency, quality checks, builds and browser verification","risk":"medium"}
+]

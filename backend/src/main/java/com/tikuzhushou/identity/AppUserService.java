@@ -64,10 +64,15 @@ public class AppUserService implements UserDetailsService {
   public Map<String, Object> profile(String username) {
     UUID id = currentId(username);
     ensurePersonalWorkspace(id, username);
-    return jdbc.queryForObject("select username,email,email_verified,status,daily_model_quota,storage_quota_bytes,session_revision,created_at from app_users where id=?", (rs, n) -> {
+    return jdbc.queryForObject("select username,email,email_verified,status,daily_model_quota,storage_quota_bytes,session_revision,created_at,display_name,phone_number,phone_verified,avatar_object_key,avatar_revision,assistant_effort,assistant_web_search from app_users where id=?", (rs, n) -> {
       Map<String, Object> result = new LinkedHashMap<>();
+      String avatarKey = rs.getString("avatar_object_key");
       result.put("id", id.toString()); result.put("username", rs.getString("username")); result.put("email", Objects.toString(rs.getString("email"), ""));
       result.put("emailVerified", rs.getBoolean("email_verified")); result.put("status", rs.getString("status"));
+      result.put("displayName", Objects.toString(rs.getString("display_name"), "").isBlank() ? rs.getString("username") : rs.getString("display_name"));
+      result.put("phoneNumber", Objects.toString(rs.getString("phone_number"), "")); result.put("phoneVerified", rs.getBoolean("phone_verified"));
+      result.put("avatarUrl", avatarKey == null ? "" : "/api/auth/avatar?v=" + rs.getInt("avatar_revision"));
+      result.put("assistantEffort", rs.getString("assistant_effort")); result.put("assistantWebSearch", rs.getBoolean("assistant_web_search"));
       result.put("dailyQuota", rs.getInt("daily_model_quota")); result.put("storageQuotaBytes", rs.getLong("storage_quota_bytes")); result.put("sessionRevision", rs.getInt("session_revision")); result.put("createdAt", rs.getTimestamp("created_at").toInstant()); result.put("roles", roles(id)); return result;
     }, id);
   }
@@ -136,6 +141,99 @@ public class AppUserService implements UserDetailsService {
     return profile(normalized);
   }
 
+  public void assertEmailAvailable(String currentUsername, String email) {
+    String normalized = EmailVerificationService.normalizedEmail(email);
+    UUID id = currentId(currentUsername);
+    Integer count = jdbc.queryForObject("select count(*) from app_users where lower(email)=lower(?) and id<>?", Integer.class, normalized, id);
+    if (count != null && count > 0) throw new IllegalArgumentException("该邮箱已被其他账号使用");
+  }
+
+  @Transactional
+  public Map<String, Object> updateEmail(String currentUsername, String email) {
+    String normalized = EmailVerificationService.normalizedEmail(email);
+    UUID id = currentId(currentUsername);
+    assertEmailAvailable(currentUsername, normalized);
+    try {
+      jdbc.update("update app_users set email=?,email_verified=true,email_verified_at=?,session_revision=session_revision+1 where id=?",
+          normalized, Timestamp.from(Instant.now()), id);
+    } catch (org.springframework.dao.DuplicateKeyException error) {
+      throw new IllegalArgumentException("该邮箱已被其他账号使用");
+    }
+    return profile(currentUsername);
+  }
+
+  @Transactional
+  public Map<String, Object> updateDisplayName(String currentUsername, String displayName) {
+    String normalizedName = displayName == null || displayName.isBlank() ? null : displayName.trim();
+    if (normalizedName != null && normalizedName.length() > 40) throw new IllegalArgumentException("显示名称不能超过 40 个字符");
+    jdbc.update("update app_users set display_name=? where id=?", normalizedName, currentId(currentUsername));
+    return profile(currentUsername);
+  }
+
+  @Transactional
+  public Map<String, Object> updateProfileSettings(String currentUsername, String effort, Boolean webSearch) {
+    String normalizedEffort = effort == null ? "STANDARD" : effort.trim().toUpperCase(Locale.ROOT);
+    if (!Set.of("FAST", "STANDARD", "DEEP").contains(normalizedEffort)) throw new IllegalArgumentException("思考强度设置无效");
+    UUID id = currentId(currentUsername);
+    jdbc.update("update app_users set assistant_effort=?,assistant_web_search=? where id=?",
+        normalizedEffort, Boolean.TRUE.equals(webSearch), id);
+    return profile(currentUsername);
+  }
+
+  @Transactional
+  public Map<String, Object> updatePhone(String currentUsername, String currentPassword, String phoneNumber) {
+    requireCurrentPassword(currentUsername, currentPassword);
+    String normalizedPhone = normalizePhone(phoneNumber);
+    UUID id = currentId(currentUsername);
+    String currentPhone = jdbc.queryForObject("select phone_number from app_users where id=?", String.class, id);
+    if (Objects.equals(currentPhone, normalizedPhone)) return profile(currentUsername);
+    if (normalizedPhone != null) {
+      Integer count = jdbc.queryForObject("select count(*) from app_users where phone_number=? and id<>?", Integer.class, normalizedPhone, id);
+      if (count != null && count > 0) throw new IllegalArgumentException("该手机号已绑定其他账号");
+    }
+    try {
+      jdbc.update("update app_users set phone_number=?,phone_verified=false where id=?", normalizedPhone, id);
+    } catch (org.springframework.dao.DuplicateKeyException error) {
+      throw new IllegalArgumentException("该手机号已绑定其他账号");
+    }
+    return profile(currentUsername);
+  }
+
+  @Transactional
+  public Map<String, Object> updatePassword(String currentUsername, String currentPassword, String newPassword) {
+    requireCurrentPassword(currentUsername, currentPassword);
+    validatePassword(newPassword);
+    UserDetails current = loadUserByUsername(currentUsername);
+    if (encoder.matches(newPassword, current.getPassword())) throw new IllegalArgumentException("新密码不能与当前密码相同");
+    jdbc.update("update app_users set password_hash=?,session_revision=session_revision+1 where id=?", encoder.encode(newPassword), currentId(currentUsername));
+    return profile(currentUsername);
+  }
+
+  private void requireCurrentPassword(String username, String password) {
+    if (password == null || !encoder.matches(password, loadUserByUsername(username).getPassword())) {
+      throw new IllegalArgumentException("当前密码不正确");
+    }
+  }
+
+  private String normalizePhone(String phoneNumber) {
+    if (phoneNumber == null || phoneNumber.isBlank()) return null;
+    String value = phoneNumber.trim().replaceAll("[\\s()\\-]", "");
+    if (!value.matches("\\+?[1-9]\\d{6,14}")) throw new IllegalArgumentException("请输入有效的手机号，含国家区号时使用 +86 格式");
+    return value;
+  }
+
+  public String avatarObjectKey(String username) {
+    return jdbc.queryForObject("select avatar_object_key from app_users where id=?", String.class, currentId(username));
+  }
+
+  @Transactional
+  public String updateAvatar(String username, String objectKey) {
+    UUID id = currentId(username);
+    String previous = jdbc.queryForObject("select avatar_object_key from app_users where id=?", String.class, id);
+    jdbc.update("update app_users set avatar_object_key=?,avatar_revision=avatar_revision+1 where id=?", objectKey, id);
+    return previous;
+  }
+
   public boolean isCurrentSession(String username, String accountId, Object revision) {
     if (accountId == null || accountId.isBlank() || revision == null) return false;
     try {
@@ -173,6 +271,7 @@ public class AppUserService implements UserDetailsService {
   private boolean currentUsernameExists(String username) { return jdbc.queryForObject("select count(*) from app_users where lower(username)=lower(?)", Integer.class, username) > 0; }
   private void validatePassword(String password) {
     if (password == null || password.length() < 8) throw new IllegalArgumentException("初始密码至少 8 位");
+    if (password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) throw new IllegalArgumentException("密码过长，请控制在 72 个英文字符或 24 个汉字以内");
   }
   private List<String> normalizeRoles(List<String> roles) {
     List<String> result = (roles == null || roles.isEmpty() ? List.of("EDITOR") : roles).stream().filter(role -> role != null && !role.isBlank()).map(role -> role.trim().toUpperCase(Locale.ROOT)).distinct().toList();

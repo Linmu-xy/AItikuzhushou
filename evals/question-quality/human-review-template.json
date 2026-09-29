@@ -1,0 +1,21 @@
+{
+  "itemId": "",
+  "executionVersion": "",
+  "discipline": "",
+  "type": "",
+  "difficulty": "",
+  "reviewer": "",
+  "datasetSplit": "held-out-test",
+  "labels": {
+    "answerCorrect": "NOT_REVIEWED",
+    "sufficientConditions": "NOT_REVIEWED",
+    "competencyAlignment": "NOT_REVIEWED",
+    "assessmentValue": "NOT_REVIEWED",
+    "distractorQuality": "NOT_REVIEWED",
+    "fairRubric": "NOT_REVIEWED",
+    "setDiversity": "NOT_REVIEWED"
+  },
+  "allowedLabels": ["NOT_REVIEWED", "PASS", "NEEDS_CHANGE", "NOT_APPLICABLE"],
+  "accepted": null,
+  "comments": ""
+}

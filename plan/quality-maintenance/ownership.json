@@ -1,0 +1,17 @@
+[
+  {"file":"frontend/src/App.tsx","layer":"shell"},
+  {"file":"frontend/src/ProjectSetupWorkspace.tsx","layer":"route"},
+  {"file":"frontend/src/KnowledgeMaintenance.tsx","layer":"leaf"},
+  {"file":"frontend/src/QuestionQualityWorkbench.tsx","layer":"leaf"},
+  {"file":"frontend/src/maintenance.css","layer":"leaf"},
+  {"file":"frontend/src/maintenanceApi.ts","layer":"shared"},
+  {"file":"backend/src/main/java/com/tikuzhushou/knowledge/*","layer":"shared"},
+  {"file":"backend/src/main/java/com/tikuzhushou/project/QuestionQuality*","layer":"shared"},
+  {"file":"backend/src/main/java/com/tikuzhushou/project/ExamProjectQuestionReviewService.java","layer":"shared"},
+  {"file":"backend/src/main/java/com/tikuzhushou/project/KnowledgeAssessmentPlanningService.java","layer":"shared"},
+  {"file":"backend/src/main/java/com/tikuzhushou/api/KnowledgePointController.java","layer":"route"},
+  {"file":"backend/src/main/java/com/tikuzhushou/api/QuestionQualityController.java","layer":"route"},
+  {"file":"backend/src/main/resources/db/migration/V46__maintainable_knowledge_points.sql","layer":"shared"},
+  {"file":"backend/src/test/**","layer":"leaf"},
+  {"file":"scripts/Test-QualityMaintenance.ps1","layer":"leaf"}
+]

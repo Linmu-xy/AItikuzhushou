@@ -695,7 +695,7 @@ class TikuApplicationTests {
     MockHttpSession oldSession = (MockHttpSession) login.getRequest().getSession(false);
     String accountId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(login.getResponse().getContentAsString()).get("id").asText();
     var rename = mvc.perform(put("/api/auth/profile").session(oldSession).contentType(MediaType.APPLICATION_JSON)
-        .content("{\"username\":\"" + updated + "\"}"))
+        .content("{\"username\":\"  " + updated + "  \"}"))
       .andExpect(status().isOk()).andExpect(jsonPath("$.username").value(updated)).andExpect(jsonPath("$.id").value(accountId)).andReturn();
     MockHttpSession refreshedSession = (MockHttpSession) rename.getRequest().getSession(false);
     assertNotNull(refreshedSession); assertNotSame(oldSession, refreshedSession);

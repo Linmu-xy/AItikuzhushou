@@ -8,7 +8,10 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,30 +22,52 @@ import org.springframework.stereotype.Service;
 public class EmailVerificationService {
   public static final String REGISTER = "REGISTER";
   public static final String LOGIN = "LOGIN";
+  public static final String EMAIL_CHANGE = "EMAIL_CHANGE";
   private static final Logger log = LoggerFactory.getLogger(EmailVerificationService.class);
   private final JdbcTemplate jdbc;
   private final PasswordEncoder encoder;
   private final boolean localCodeMode;
+  private final ObjectProvider<JavaMailSender> mailSenders;
+  private final String mailHost;
+  private final String mailFrom;
   private final SecureRandom random = new SecureRandom();
 
   public EmailVerificationService(JdbcTemplate jdbc, PasswordEncoder encoder,
-      @Value("${app.mail.local-code-mode:true}") boolean localCodeMode) {
+      @Value("${app.mail.local-code-mode:true}") boolean localCodeMode,
+      ObjectProvider<JavaMailSender> mailSenders,
+      @Value("${spring.mail.host:}") String mailHost,
+      @Value("${app.mail.from:}") String mailFrom) {
     this.jdbc = jdbc; this.encoder = encoder; this.localCodeMode = localCodeMode;
+    this.mailSenders = mailSenders; this.mailHost = mailHost; this.mailFrom = mailFrom;
   }
 
   public Map<String, Object> issue(String email, String purpose) {
     String target = normalizedEmail(email); validatePurpose(purpose);
-    if (!localCodeMode) {
-      throw new IllegalStateException("EMAIL_DELIVERY_NOT_CONFIGURED：生产环境尚未配置 SMTP 邮件服务");
-    }
     Instant now = Instant.now();
     var latest = jdbc.query("select created_at from email_verification_codes where lower(email)=lower(?) and purpose=? and consumed_at is null order by created_at desc limit 1",
         (rs, n) -> rs.getTimestamp(1).toInstant(), target, purpose);
     if (!latest.isEmpty() && latest.getFirst().plusSeconds(60).isAfter(now)) throw new IllegalStateException("EMAIL_CODE_RATE_LIMITED：验证码已发送，请 60 秒后重试");
+    JavaMailSender mailSender = null;
+    if (!localCodeMode) {
+      if (mailHost.isBlank() || mailFrom.isBlank()) throw new IllegalStateException("EMAIL_DELIVERY_NOT_CONFIGURED：请先配置 SMTP 邮件服务");
+      mailSender = mailSenders.getIfAvailable();
+      if (mailSender == null) throw new IllegalStateException("EMAIL_DELIVERY_NOT_CONFIGURED：请先配置 SMTP 邮件服务");
+    }
     String code = "%06d".formatted(random.nextInt(1_000_000));
+    UUID codeId = UUID.randomUUID();
     jdbc.update("insert into email_verification_codes(id,email,purpose,code_hash,attempts,expires_at,created_at) values(?,?,?,?,0,?,?)",
-        UUID.randomUUID(), target, purpose, encoder.encode(code), Timestamp.from(now.plusSeconds(600)), Timestamp.from(now));
-    return Map.of("status", "CODE_ISSUED", "delivery", "LOCAL_DEVELOPMENT", "expiresInSeconds", 600, "debugCode", code);
+        codeId, target, purpose, encoder.encode(code), Timestamp.from(now.plusSeconds(600)), Timestamp.from(now));
+    if (localCodeMode) return Map.of("status", "CODE_ISSUED", "delivery", "LOCAL_DEVELOPMENT", "expiresInSeconds", 600, "debugCode", code);
+    try {
+      SimpleMailMessage message = new SimpleMailMessage();
+      message.setFrom(mailFrom); message.setTo(target); message.setSubject("题库助手邮箱验证码");
+      message.setText("你的验证码是 " + code + "，10 分钟内有效。若这不是你发起的操作，请忽略此邮件。");
+      mailSender.send(message);
+    } catch (RuntimeException error) {
+      jdbc.update("update email_verification_codes set consumed_at=? where id=?", Timestamp.from(Instant.now()), codeId);
+      throw new IllegalStateException("EMAIL_DELIVERY_FAILED：验证码邮件发送失败，请稍后重试");
+    }
+    return Map.of("status", "CODE_ISSUED", "delivery", "EMAIL", "expiresInSeconds", 600);
   }
 
   public void verify(String email, String purpose, String code) {
@@ -64,7 +89,7 @@ public class EmailVerificationService {
     if (!value.matches("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+")) throw new IllegalArgumentException("邮箱格式无效");
     return value;
   }
-  private void validatePurpose(String purpose) { if (!REGISTER.equals(purpose) && !LOGIN.equals(purpose)) throw new IllegalArgumentException("不支持的验证码用途"); }
+  private void validatePurpose(String purpose) { if (!REGISTER.equals(purpose) && !LOGIN.equals(purpose) && !EMAIL_CHANGE.equals(purpose)) throw new IllegalArgumentException("不支持的验证码用途"); }
   @Scheduled(cron = "0 40 3 * * *")
   public void retain() {
     int removed = jdbc.update("delete from email_verification_codes where created_at < ?",

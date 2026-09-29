@@ -3,8 +3,19 @@ spring:
   profiles: { default: dev }
   servlet: { multipart: { max-file-size: 64MB, max-request-size: 72MB } }
   jpa: { open-in-view: false, hibernate: { ddl-auto: validate } }
-  flyway: { enabled: true }
+  flyway: { enabled: true, locations: 'classpath:db/migration,classpath:db/vendor/{vendor}' }
   session: { timeout: 12h, cookie: { http-only: true, same-site: lax } }
+  mail:
+    host: "${MAIL_HOST:}"
+    port: "${MAIL_PORT:587}"
+    username: "${MAIL_USERNAME:}"
+    password: "${MAIL_PASSWORD:}"
+    properties:
+      mail.smtp.auth: "${MAIL_SMTP_AUTH:true}"
+      mail.smtp.starttls.enable: "${MAIL_SMTP_STARTTLS_ENABLE:true}"
+      mail.smtp.connectiontimeout: "${MAIL_SMTP_TIMEOUT_MS:5000}"
+      mail.smtp.timeout: "${MAIL_SMTP_TIMEOUT_MS:5000}"
+      mail.smtp.writetimeout: "${MAIL_SMTP_TIMEOUT_MS:5000}"
 app:
   ai:
     base-url: "${DEEPSEEK_BASE_URL:https://api.deepseek.com}"
@@ -44,6 +55,7 @@ app:
     # Never expose a one-time code from a production API response. The development
     # profile explicitly enables local delivery so the test environment stays usable.
     local-code-mode: "${APP_MAIL_LOCAL_CODE_MODE:false}"
+    from: "${MAIL_FROM:${MAIL_USERNAME:}}"
   storage:
     local-path: "${APP_STORAGE_PATH:./storage}"
   export:
@@ -62,9 +74,11 @@ app:
     worker-python-path: "${APP_CAD_WORKER_PYTHONPATH:}"
     work-root: "${APP_CAD_WORK_ROOT:./cad-work}"
     timeout-seconds: "${APP_CAD_WORKER_TIMEOUT_SECONDS:300}"
-    deflection: "${APP_CAD_PREVIEW_DEFLECTION:0.5}"
-    max-triangles: "${APP_CAD_PREVIEW_MAX_TRIANGLES:250000}"
-    max-file-size: "${APP_CAD_MAX_FILE_SIZE:67108864}"
+     deflection: "${APP_CAD_PREVIEW_DEFLECTION:0.5}"
+     max-triangles: "${APP_CAD_PREVIEW_MAX_TRIANGLES:250000}"
+     drawing-dpi: "${APP_CAD_DRAWING_DPI:300}"
+     drawing-max-pages: "${APP_CAD_DRAWING_MAX_PAGES:40}"
+     max-file-size: "${APP_CAD_MAX_FILE_SIZE:67108864}"
   ocr:
     enabled: "${APP_OCR_ENABLED:false}"
     max-pages: "${APP_OCR_MAX_PAGES:120}"

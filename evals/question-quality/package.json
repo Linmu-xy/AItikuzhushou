@@ -1,0 +1,14 @@
+{
+  "name": "tiku-question-quality-evals",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Offline regression replay of the actual Java question quality gates; no model calls",
+  "engines": { "node": ">=22.22.0" },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "scripts": {
+    "eval": "node run.cjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "devDependencies": { "promptfoo": "0.123.1", "hono": "4.13.9", "@libsql/win32-x64-msvc": "0.5.29" }
+}

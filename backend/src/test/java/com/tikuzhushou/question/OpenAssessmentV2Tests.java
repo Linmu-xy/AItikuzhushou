@@ -2,6 +2,7 @@ package com.tikuzhushou.question;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tikuzhushou.ai.DeepSeekService;
+import com.tikuzhushou.ai.ModelResponseException;
 import com.tikuzhushou.assistant.DeepSeekWebSearchService;
 import com.tikuzhushou.project.KnowledgeVisualService;
 import java.util.LinkedHashMap;
@@ -68,10 +69,14 @@ class OpenAssessmentV2Tests {
 
   @Test void intentionalUncertaintyInOpenTaskIsReviewedSemantically() {
     var question = question(); question.put("type", "COMPREHENSIVE");
+    question.put("stem", "请指出未给定的结构，并提出需要补充的视图");
+    question.put("scoringRubric", "指出未给定的结构并合理提出补充视图得分");
     solveReturns(solution("指出信息不足并提出补充视图方案")
         .replace("\"ambiguities\":[]", "\"ambiguities\":[\"未指定卡扣周向分布，这是本题所问\"]")
         .replace("\"unresolvedFacts\":[]", "\"unresolvedFacts\":[\"图中未给的结构\"]"));
-    judgeReturns(judgment());
+    judgeReturns(judgment().replace("\"flags\":[]", "\"issueResolutions\":["
+        + "{\"id\":\"A1\",\"status\":\"ASKED_UNCERTAINTY\",\"reason\":\"本题正是考查缺失结构\",\"stemEvidence\":\"请指出未给定的结构\",\"rubricEvidence\":\"指出未给定的结构\"},"
+        + "{\"id\":\"U1\",\"status\":\"ASKED_UNCERTAINTY\",\"reason\":\"评分接纳指出缺失\",\"stemEvidence\":\"请指出未给定的结构\",\"rubricEvidence\":\"指出未给定的结构\"}],\"flags\":[]"));
     assertThat(service.review(question).passed()).isTrue();
   }
 
@@ -257,6 +262,153 @@ class OpenAssessmentV2Tests {
     when(ai.analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_JUDGE_RECOVERY")))
         .thenReturn(judgment());
     assertThat(service.review(question()).passed()).isTrue();
+  }
+
+  @Test void fastUsesLowEffortButHardAuthorRetainsDeeperDesign() {
+    assertThat(OpenAssessmentService.policy(draft(), "AUTHOR", 0).effort()).isEqualTo("low");
+    assertThat(OpenAssessmentService.policy(draft(), "SOLVE", 0).effort()).isEqualTo("low");
+    var hard = draft(); hard.put("difficulty", "HARD");
+    assertThat(OpenAssessmentService.policy(hard, "AUTHOR", 0).effort()).isEqualTo("high");
+    assertThat(OpenAssessmentService.policy(hard, "AUTHOR", 1).effort()).isEqualTo("low");
+    assertThat(OpenAssessmentService.policy(hard, "SOLVE", 0).maxTokens()).isGreaterThanOrEqualTo(8_000);
+  }
+
+  @Test void truncatedAuthorRecoversWithoutTryingToRepairPartialJson() {
+    when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_AUTHOR")))
+        .thenThrow(new ModelResponseException(ModelResponseException.Reason.TRUNCATED));
+    when(ai.analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_AUTHOR_RECOVERY")))
+        .thenReturn(author());
+    var draft = draft();
+    assertThat(service.generate(List.of(draft)).getFirst()).containsKey("stem");
+    assertThat(draft.get("_assessmentExecution").toString()).contains("TRUNCATED", "RECOVERY");
+    verify(ai, never()).analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_FORMAT_REPAIR"));
+  }
+
+  @Test void revisedItemRemembersSuccessfulRecoveryOnlyForThatStage() {
+    var question = draft();
+    question.put("_assessmentExecution", List.of(Map.of("stage", "SOLVE", "recovery", true, "result", "RESPONSE_RECEIVED")));
+    assertThat(OpenAssessmentService.policy(question, "SOLVE", 0)).isEqualTo(new OpenAssessmentService.CallPolicy("none", 5_000));
+    assertThat(OpenAssessmentService.policy(question, "SOLVE", 1).effort()).isEqualTo("none");
+    assertThat(OpenAssessmentService.policy(question, "AUTHOR", 0).effort()).isEqualTo("low");
+    assertThat(OpenAssessmentService.policy(draft(), "SOLVE", 0).effort()).isEqualTo("low");
+    question.put("_assessmentExecution", List.of(Map.of("stage", "SOLVE", "recovery", true, "result", "TRUNCATED")));
+    assertThat(OpenAssessmentService.policy(question, "SOLVE", 0).effort()).isEqualTo("low");
+  }
+
+  @Test void reviewPromptExcludesHistoricalAuditsAndDuplicateRubric() {
+    var question = question();
+    question.put("_assessmentDesign", Map.of("kind", "GENERAL", "criticalClaims", List.of("长度比例知识"),
+        "PriorAttempt", Map.of("answer", "HISTORICAL_ANSWER"), "ReviewRetries", List.of("OLD_REVIEW"),
+        "rubricItems", List.of(Map.of("criterion", "DUPLICATE_RUBRIC", "points", 2))));
+    solveReturns(solution("B")); judgeReturns(judgment());
+    assertThat(service.review(question).passed()).isTrue();
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(ai).analyseJson(anyString(), prompt.capture(), anyInt(), anyString(), eq("ASSESSMENT_V2_JUDGE"));
+    assertThat(prompt.getValue()).contains("长度比例知识").doesNotContain("HISTORICAL_ANSWER", "OLD_REVIEW", "DUPLICATE_RUBRIC");
+  }
+
+  @Test void emptySolverHasBoundedRecoveryWithBlindInputStillIsolated() {
+    when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_SOLVE")))
+        .thenThrow(new ModelResponseException(ModelResponseException.Reason.EMPTY));
+    when(ai.analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_SOLVE_RECOVERY")))
+        .thenReturn(solution("B"));
+    judgeReturns(judgment());
+    var question = question(); question.put("analysis", "AUTHOR_SECRET");
+    assertThat(service.review(question).passed()).isTrue();
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(ai).analyseJsonFast(anyString(), prompt.capture(), anyInt(), eq("ASSESSMENT_V2_SOLVE_RECOVERY"));
+    assertThat(prompt.getValue()).doesNotContain("AUTHOR_SECRET", "\"answer\":\"B\"");
+  }
+
+  @Test void recoveryFailureStopsInsteadOfRequestingAnotherAuthorRewrite() {
+    when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_AUTHOR")))
+        .thenThrow(new ModelResponseException(ModelResponseException.Reason.TRUNCATED));
+    when(ai.analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_AUTHOR_RECOVERY")))
+        .thenThrow(new ModelResponseException(ModelResponseException.Reason.TRUNCATED));
+    var candidate = refiner().generateCandidates(List.of(draft()), "FAST").getFirst();
+    assertThat(candidate.valid()).isFalse();
+    assertThat(candidate.question()).containsEntry("_assessmentNoAutoRewrite", true);
+    verify(ai, times(1)).analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_AUTHOR_RECOVERY"));
+  }
+
+  @Test void protocolRecoveryOfExpertAuthorPreservesQuestionModel() {
+    when(ai.analyseQuestionJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_AUTHOR")))
+        .thenThrow(new ModelResponseException(ModelResponseException.Reason.EMPTY));
+    when(ai.analyseQuestionJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_AUTHOR_RECOVERY")))
+        .thenReturn(author());
+    assertThat(refiner().generateCandidates(List.of(draft()), "PROFESSIONAL_PRO").getFirst().valid()).isTrue();
+    verify(ai, never()).analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_AUTHOR_RECOVERY"));
+  }
+
+  @Test void inlineArithmeticNeedsNoAdditionalModelTurn() {
+    var question = question(); question.put("type", "CALCULATION");
+    solveReturns(solution("40毫米").replace("\"unresolvedFacts\":[]", "\"unresolvedFacts\":[],"
+        + "\"calculations\":[{\"quantity\":\"纸面长度mm\",\"expression\":\"80/2\",\"expected\":\"40\",\"decimals\":0}]"));
+    judgeReturns(judgment());
+    assertThat(service.review(question).passed()).isTrue();
+    assertThat(question.get("_assessmentSolveResearch").toString()).contains("CALCULATED", "value=40");
+    verify(ai, times(1)).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_SOLVE"));
+  }
+
+  @Test void unanswerableCalculationDoesNotForceTheSolverToInventNumericInputs() {
+    var question = question(); question.put("type", "CALCULATION");
+    solveReturns(solution("缺少决定数值的基准").replace("\"answerable\":true", "\"answerable\":false"));
+    judgeReturns(judgment());
+    var review = service.review(question);
+    assertThat(review.available()).isTrue();
+    assertThat(review.flags()).contains("INDEPENDENT_ANSWER_UNRESOLVED");
+    verify(ai, times(1)).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_SOLVE"));
+  }
+
+  @Test void fakeCalculatorAnswerNeverPassesAfterOneCorrection() {
+    var question = question(); question.put("type", "CALCULATION");
+    solveReturns(solution("41毫米").replace("\"unresolvedFacts\":[]", "\"unresolvedFacts\":[],"
+        + "\"calculations\":[{\"quantity\":\"长度mm\",\"expression\":\"80/2\",\"expected\":\"41\",\"decimals\":0}]"));
+    assertThat(service.review(question).passed()).isFalse();
+    verify(ai, times(2)).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_SOLVE"));
+    verify(ai, never()).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_JUDGE"));
+  }
+
+  @Test void unresolvedDatumCannotPassBecauseJudgeSaysItIsImplied() {
+    var question = question(); question.put("type", "CALCULATION");
+    solveReturns(solution("40毫米").replace("\"ambiguities\":[]", "\"ambiguities\":[\"长度未指定截面\"]")
+        .replace("\"unresolvedFacts\":[]", "\"unresolvedFacts\":[],\"calculations\":[{\"quantity\":\"长度mm\",\"expression\":\"80/2\",\"expected\":\"40\",\"decimals\":0}]"));
+    judgeReturns(judgment());
+    var review = service.review(question);
+    assertThat(review.flags()).contains("ISSUES_NOT_RESOLVED");
+    assertThat(review.feedback()).contains("长度未指定截面");
+    judgeReturns(judgment().replace("\"flags\":[]", "\"issueResolutions\":[{\"id\":\"A1\",\"status\":\"STEM_COVERS\",\"reason\":\"默认开口端\",\"stemEvidence\":\"开口截面长度为80毫米\"}],\"flags\":[]"));
+    assertThat(service.review(question).flags()).contains("ISSUES_NOT_RESOLVED");
+  }
+
+  @Test void rubricTotalIsValidatedAndRenderedFromOneStructuredSource() {
+    var draft = draft(); draft.put("points", 2);
+    authorReturns(author().replace("\"unresolvedFacts\":[]", "\"rubricItems\":[{\"criterion\":\"正确选择\",\"points\":2}],\"unresolvedFacts\":[]"));
+    var question = service.generate(List.of(draft)).getFirst();
+    assertThat(question.get("scoringRubric")).asString().contains("正确选择（2分）", "总分：2分");
+    authorReturns(author().replace("\"unresolvedFacts\":[]", "\"rubricItems\":[{\"criterion\":\"正确选择\",\"points\":1}],\"unresolvedFacts\":[]"));
+    assertThat(service.generate(List.of(draft)).getFirst().get("_authorFailure")).asString().contains("总分不符");
+    assertThat(draft.get("_assessmentNoAutoRewrite")).isEqualTo(false);
+  }
+
+  @Test void contradictoryPassPreservesTheQuestionForReviewInsteadOfRewritingIt() {
+    solveReturns(solution("B"));
+    judgeReturns(judgment().replace("\"flags\":[]", "\"flags\":[\"盲解解释有误，但作者答案正确，不影响通过\"]"));
+    var review = service.review(question());
+    assertThat(review.available()).isFalse();
+    assertThat(review.passed()).isFalse();
+    assertThat(review.flags()).contains("REVIEW_PROTOCOL_CONFLICT", "PROFESSIONAL_REVIEW_UNAVAILABLE");
+    verify(ai, times(1)).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_JUDGE"));
+  }
+
+  @Test void selectedStrategyAndStableToolProtocolAreInTheActualAuthorPrompt() {
+    var draft = draft(); draft.put("type", "CASE_ANALYSIS"); authorReturns(author());
+    service.generate(List.of(draft));
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(ai).analyseJson(anyString(), prompt.capture(), anyInt(), anyString(), eq("ASSESSMENT_V2_AUTHOR"));
+    assertThat(prompt.getValue()).startsWith("可按需调用公开网页搜索")
+        .contains("【案例分析策略】", "有依据的替代方案", "知识库提供课程/受测者背景", "calculations")
+        .doesNotContain("【选择题策略】", "【计算题策略】", "120/(1-0.02)");
   }
 
   private void prepareSearch() {

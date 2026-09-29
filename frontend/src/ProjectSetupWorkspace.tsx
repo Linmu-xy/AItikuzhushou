@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { QuestionDraft } from './AssistantWorkspace';
-import { QuestionStimulusPreview } from './QuestionStimulusPreview';
+import QuestionQualityWorkbench from './QuestionQualityWorkbench';
 
 type Mode = 'KNOWLEDGE_BASE' | 'CAREER' | 'STANDARD' | 'MATERIAL' | 'FUSION';
 type KnowledgeBase = { id: string; name: string };
@@ -15,9 +15,6 @@ type AssessmentItem = { sequence: number; competency: string; task: string; type
 type VariantTask = { id: string; projectId: string; evidenceSnapshotId: string; status: 'READY' | 'SUPERSEDED'; variantCount: number; questionCountPerVariant: number; totalQuestionCount: number; createdAt: string; updatedAt: string; assessmentPlan?: { summary: string; items: AssessmentItem[]; webEvidence?: { query: string; summary: string; sources: { title: string; url: string }[]; searchedAt: string } }; items: VariantItem[] };
 type GenerationItem = { id: string; variantItemId: string; variantNo: number; variantLabel: string; sequenceNo: number; questionType: string; typeLabel: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; points: number; status: string; attempts: number; question: Record<string, unknown>; evidence: Record<string, unknown>; review: Record<string, unknown>; questionVersion?: number; reviewerId?: string; reviewComment?: string; reviewedAt?: string; errorCode?: string; errorMessage?: string; updatedAt: string };
 type GenerationRun = { id: string; projectId: string; generationTaskId: string; evidenceSnapshotId: string; status: 'QUEUED' | 'RUNNING' | 'REVIEW_REQUIRED' | 'REVIEW_PENDING' | 'PARTIAL' | 'FAILED' | 'CANCELLED'; generationMode: 'FAST' | 'PROFESSIONAL_PRO'; plannedCount: number; processedCount: number; reviewRequiredCount: number; reviewPendingCount: number; failedCount: number; errorMessage?: string; createdAt: string; startedAt?: string; finishedAt?: string; updatedAt: string; items: GenerationItem[] };
-type ReviewDraft = { stem: string; options: string; answer: string; analysis: string; scoringRubric: string; comment: string };
-type QuestionVersion = { id: string; version: number; question: Record<string, unknown>; design: Record<string, unknown>; evidence: Record<string, unknown>; changeType: string; changeSummary: string; actorId?: string; createdAt: string };
-type ReviewEvent = { id: string; actorId?: string; actorName: string; action: string; fromStatus: string; toStatus: string; questionVersion: number; comment: string; snapshot: Record<string, unknown>; createdAt: string };
 type ExportReadiness = { runId: string; totalCount: number; approvedCount: number; failedCount: number; ready: boolean; blockers: string[] };
 type ProjectExportArtifact = { id: string; exportRunId: string; outputType: string; filename: string; mediaType: string; sizeBytes: number; sha256: string; createdAt: string };
 type ProjectExportRun = { id: string; projectId: string; generationRunId: string; evidenceSnapshotId: string; status: 'QUEUED' | 'RUNNING' | 'DOWNLOAD_READY' | 'FAILED' | 'CANCELLED'; outputTypesJson: string; requestedCount: number; completedCount: number; errorMessage?: string; createdAt: string; startedAt?: string; finishedAt?: string; updatedAt: string; artifacts: ProjectExportArtifact[] };
@@ -27,6 +24,7 @@ type Props = {
   projectId?: string;
   initialMode: Mode;
   initialSeed?: QuestionDraft;
+  defaultWebSearchEnabled?: boolean;
   initialBaseId?: string;
   initialSourceId?: string;
   bases: KnowledgeBase[];
@@ -103,7 +101,7 @@ function QuestionOptions({ text }: { text: string }) {
   return <div className="generated-question-options">{choices.map((choice, index) => <p key={index}>{choice}</p>)}</div>;
 }
 
-export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSeed, initialBaseId, initialSourceId, bases, onNavigate, onMessage }: Props) {
+export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSeed, defaultWebSearchEnabled, initialBaseId, initialSourceId, bases, onNavigate, onMessage }: Props) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [baseId, setBaseId] = useState(initialBaseId || bases[0]?.id || '');
   const [name, setName] = useState(initialMode === 'KNOWLEDGE_BASE' ? '新题库' : initialMode === 'CAREER' ? `${initialSeed?.requirement.match(/^职业：(.+)$/m)?.[1] || '职业'}命题` : `${modeName(initialMode)}命题项目`);
@@ -114,7 +112,7 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
   const [scores, setScores] = useState<ScoreRow[]>(initialSeed ? [{ type: initialSeed.questionType, count: initialSeed.questionCount, points: 2 }] : initialMode === 'KNOWLEDGE_BASE' ? [{ type: '智能题型', count: 10, points: 2 }] : initialMode === 'CAREER' ? [{ type: '单选题', count: 20, points: 2 }] : defaultScores);
   const [customSettings, setCustomSettings] = useState(!['KNOWLEDGE_BASE', 'CAREER'].includes(initialMode));
   const [generationMode, setGenerationMode] = useState<'FAST' | 'PROFESSIONAL_PRO'>('FAST');
-  const [webSearchEnabled, setWebSearchEnabled] = useState(initialSeed?.webSearch ?? initialMode === 'KNOWLEDGE_BASE');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(initialSeed?.webSearch ?? defaultWebSearchEnabled ?? initialMode === 'KNOWLEDGE_BASE');
   const [authorized, setAuthorized] = useState(false);
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [cadMaterials, setCadMaterials] = useState<CadMaterial[]>([]);
@@ -123,11 +121,6 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
   const [preparation, setPreparation] = useState<Preparation>();
   const [variantTask, setVariantTask] = useState<VariantTask>();
   const [generationRun, setGenerationRun] = useState<GenerationRun>();
-  const [reviewingItemId, setReviewingItemId] = useState<string>();
-  const [reviewDraft, setReviewDraft] = useState<ReviewDraft>();
-  const [historyItemId, setHistoryItemId] = useState<string>();
-  const [historyVersions, setHistoryVersions] = useState<QuestionVersion[]>([]);
-  const [historyEvents, setHistoryEvents] = useState<ReviewEvent[]>([]);
   const [exportReadiness, setExportReadiness] = useState<ExportReadiness>();
   const [projectExports, setProjectExports] = useState<ProjectExportRun[]>([]);
   const [selectedExportTypes, setSelectedExportTypes] = useState<string[]>(initialMode === 'KNOWLEDGE_BASE'
@@ -346,67 +339,6 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
     } finally { setBusy(false); }
   };
   const currentPlan = variantTask && preparation?.snapshotId === variantTask.evidenceSnapshotId ? variantTask : undefined;
-  const retryQuestionReview = async (item: GenerationItem) => {
-    if (!project || !generationRun) return;
-    setBusy(true); setError('');
-    try {
-      const run = await request<GenerationRun>(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}/items/${item.id}/retry-review`, auth, { method: 'POST' });
-      setGenerationRun(run);
-      onMessage('已重新审查原题，未重新生成题目。');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '审题重试失败，原题已保留');
-    } finally { setBusy(false); }
-  };
-  const openReview = (item: GenerationItem) => {
-    setReviewingItemId(item.id);
-    setReviewDraft({
-      stem: mapText(item.question, 'stem'),
-      options: mapText(item.question, 'options'),
-      answer: mapText(item.question, 'answer'),
-      analysis: mapText(item.question, 'analysis'),
-      scoringRubric: mapText(item.question, 'scoringRubric'),
-      comment: item.reviewComment || mapText(item.review, 'feedback'),
-    });
-  };
-  const submitReview = async (item: GenerationItem, decision: 'SAVE_DRAFT' | 'APPROVE' | 'REJECT' | 'REOPEN') => {
-    if (!project || !generationRun) return;
-    if (decision === 'REJECT' && !reviewDraft?.comment.trim()) return setError('驳回题目时请填写审核意见');
-    setBusy(true); setError('');
-    try {
-      const question = reviewDraft && reviewingItemId === item.id ? {
-        stem: reviewDraft.stem,
-        options: reviewDraft.options,
-        answer: reviewDraft.answer,
-        analysis: reviewDraft.analysis,
-        scoringRubric: reviewDraft.scoringRubric,
-      } : undefined;
-      await request(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}/items/${item.id}/review`, auth, {
-        method: 'PATCH', body: JSON.stringify({ decision, expectedVersion: item.questionVersion || 1, comment: reviewDraft?.comment || '', question }),
-      });
-      const refreshed = await request<GenerationRun>(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}`, auth);
-      setGenerationRun(refreshed);
-      setReviewingItemId(undefined);
-      setReviewDraft(undefined);
-      onMessage(decision === 'APPROVE' ? `第 ${item.variantLabel} 套第 ${item.sequenceNo} 题已审核通过。` : decision === 'REJECT' ? `第 ${item.variantLabel} 套第 ${item.sequenceNo} 题已驳回并留存原因。` : decision === 'REOPEN' ? '题目已重新打开审核。' : '题目修改已保存，仍需完成审核。');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '题目审核保存失败');
-    } finally { setBusy(false); }
-  };
-  const toggleHistory = async (item: GenerationItem) => {
-    if (!project || !generationRun) return;
-    if (historyItemId === item.id) return setHistoryItemId(undefined);
-    try {
-      const [versions, events] = await Promise.all([
-        request<QuestionVersion[]>(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}/items/${item.id}/versions`, auth),
-        request<ReviewEvent[]>(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}/items/${item.id}/review-events`, auth),
-      ]);
-      setHistoryItemId(item.id);
-      setHistoryVersions(versions);
-      setHistoryEvents(events);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '题目版本记录加载失败');
-    }
-  };
   const toggleExportType = (type: string) => setSelectedExportTypes(current => current.includes(type) ? current.filter(value => value !== type) : [...current, type]);
   const startProjectExport = async () => {
     if (!project || !generationRun) return;
@@ -434,7 +366,6 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
       setError(caught instanceof Error ? caught.message : '项目交付文件下载失败');
     }
   };
-  const updateReviewDraft = (field: keyof ReviewDraft, value: string) => setReviewDraft(current => current ? { ...current, [field]: value } : current);
   const planGroups = useMemo(() => {
     if (!currentPlan) return [] as { variantNo: number; variantLabel: string; items: VariantItem[] }[];
     const groups = new Map<number, { variantNo: number; variantLabel: string; items: VariantItem[] }>();
@@ -451,36 +382,9 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
     const unavailable = type === 'DOCUMENT' && ((mode === 'KNOWLEDGE_BASE' && !['PARSED', 'PARSED_PARTIAL'].includes(status)) || (mode === 'CAREER' && (status !== 'PARSED' || (initialSourceId ? id !== initialSourceId : !checked))));
     return <article className={`setup-source ${checked ? 'selected' : ''}`} key={key}><label className="setup-source-check"><input type="checkbox" checked={checked} disabled={unavailable && !checked} onChange={event => toggleSource(type, id, event.target.checked)} /><span><b>{nameValue}</b><small>{meta} · {unavailable ? '不可选' : status}</small></span></label>{checked && !['KNOWLEDGE_BASE', 'CAREER'].includes(mode) && <select aria-label={`${nameValue}资料角色`} value={selectedSources[key]} onChange={event => changeSourceRole(type, id, event.target.value)}>{roleOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}</article>;
   };
-  const renderGenerationItem = (item: GenerationItem) => {
-    const editable = item.status === 'REVIEW_REQUIRED' || item.status === 'REJECTED';
-    const editing = reviewingItemId === item.id && Boolean(reviewDraft);
-    return <article className="generated-question" key={item.id}>
-      <div className="generated-question-head"><span>第 {item.variantLabel} 套 · {item.sequenceNo} 题 · {item.typeLabel} · V{item.questionVersion || 1}</span><em className={`generation-item-status ${item.status.toLowerCase()}`}>{itemStatusName(item.status)}</em></div>
-      <h4>{mapText(item.question, 'stem')}</h4>
-      {project && <QuestionStimulusPreview projectId={project.id} auth={auth} stimuli={item.question.stimuli} />}
-      <QuestionOptions text={mapText(item.question, 'options')} />
-      <p className="generated-question-answer"><b>答案：</b>{mapText(item.question, 'answer')} · <b>{item.points} 分</b></p>
-      <p className="generated-question-analysis">{mapText(item.question, 'analysis')}</p>
-      {item.reviewComment && <p className="generated-question-review">教师审核意见：{item.reviewComment}</p>}
-      {!item.reviewerId && (item.questionVersion ?? 1) === 1 && (item.status === 'REVIEW_PENDING' || item.status === 'REJECTED' && item.errorCode === 'QUALITY_REJECTED') && <div className="question-review-actions"><button className="secondary" disabled={busy || !generationRun || ['QUEUED', 'RUNNING'].includes(generationRun.status)} onClick={() => void retryQuestionReview(item)}>{busy ? '正在审题…' : '仅重试审题'}</button><small>保留原题，重新调用审题模型并消耗额度；通过后仍需人工审核。</small></div>}
-      {editable && !editing && <div className="question-review-actions"><button className="secondary" onClick={() => openReview(item)}>编辑并审核</button></div>}
-      {item.status === 'APPROVED' && <div className="question-review-actions"><button className="secondary" onClick={() => void submitReview(item, 'REOPEN')}>重新打开审核</button></div>}
-      {editing && reviewDraft && <div className="question-review-editor">
-        <label>题干<textarea value={reviewDraft.stem} onChange={event => updateReviewDraft('stem', event.target.value)} rows={4} /></label>
-        {item.questionType.includes('CHOICE') && <label>选项<textarea value={reviewDraft.options} onChange={event => updateReviewDraft('options', event.target.value)} rows={4} placeholder="A. … | B. … | C. … | D. …" /></label>}
-        <div className="question-review-editor-grid"><label>答案<input value={reviewDraft.answer} onChange={event => updateReviewDraft('answer', event.target.value)} /></label><label>评分细则<input value={reviewDraft.scoringRubric} onChange={event => updateReviewDraft('scoringRubric', event.target.value)} /></label></div>
-        <label>解析<textarea value={reviewDraft.analysis} onChange={event => updateReviewDraft('analysis', event.target.value)} rows={3} /></label>
-        <label>审核意见<textarea value={reviewDraft.comment} onChange={event => updateReviewDraft('comment', event.target.value)} rows={2} placeholder="通过可填写修改说明；驳回必须填写原因。" /></label>
-        <div className="question-review-actions"><button className="secondary" onClick={() => void submitReview(item, 'SAVE_DRAFT')} disabled={busy}>保存修改</button><button onClick={() => void submitReview(item, 'APPROVE')} disabled={busy}>保存并通过</button><button className="danger-button" onClick={() => void submitReview(item, 'REJECT')} disabled={busy}>驳回</button></div>
-      </div>}
-      {mapText(item.review, 'feedback') && <details><summary>审题反馈</summary><p className="generated-question-review">{mapText(item.review, 'feedback')}</p></details>}
-      <button className="history-toggle" onClick={() => void toggleHistory(item)}>{historyItemId === item.id ? '收起版本与操作记录' : '查看版本与操作记录'}</button>
-      {historyItemId === item.id && <div className="question-history"><div><b>题目版本</b>{historyVersions.map(version => <article key={version.id}><span>V{version.version} · {version.changeType === 'AI_GENERATED' ? 'AI 生成' : '教师编辑'}</span><p>{mapText(version.question, 'stem')}</p><small>{version.changeSummary || '无说明'} · {new Date(version.createdAt).toLocaleString()}</small></article>)}</div><div><b>审核操作</b>{historyEvents.map(event => <article key={event.id}><span>{event.action} · {event.actorName}</span><p>{event.fromStatus} → {event.toStatus} · V{event.questionVersion}</p><small>{event.comment || '无意见'} · {new Date(event.createdAt).toLocaleString()}</small></article>)}</div></div>}
-    </article>;
-  };
 
   return <div className={`project-setup ${['KNOWLEDGE_BASE', 'CAREER'].includes(mode) ? 'knowledge-project' : ''} ${customSettings ? 'custom-settings' : 'simple-settings'}`} data-step={step}>
-    <nav className="project-steps" aria-label="项目步骤">{['资料与配置', '生成题目', '审核题目', '导出交付'].map((label, index) => <button key={label} className={step === index ? 'active' : ''} aria-current={step === index ? 'step' : undefined} onClick={() => setStep(index)}>{index + 1}<span>{label}</span></button>)}</nav>
+    <nav className="project-steps" aria-label="项目步骤">{['资料与配置', '生成题目', '质量工作台', '导出交付'].map((label, index) => <button key={label} className={step === index ? 'active' : ''} aria-current={step === index ? 'step' : undefined} onClick={() => setStep(index)}>{index + 1}<span>{label}</span></button>)}</nav>
     <section className="setup-intro"><div><h2>{mode === 'KNOWLEDGE_BASE' ? '知识库出题' : mode === 'CAREER' ? '职业命题' : '历史命题项目'}</h2><p className="muted">{mode === 'KNOWLEDGE_BASE' ? '选择知识库文档，确定题量和难度，生成后审核交付。' : mode === 'CAREER' ? '依据已确认的职业标准与选定考点命题，生成后仍需人工审核。' : '此项目沿用创建时的命题方式，原有资料与审核记录保持不变。'}</p></div><div className="setup-state"><span className={project ? 'saved' : ''} />{project ? `已保存 · ${project.sourceCount} 份资料` : '尚未保存'}</div></section>
     {error && <div className="setup-error" role="alert"><b>配置未保存</b><span>{error}</span><button className="secondary" onClick={() => setError('')}>知道了</button></div>}
     <section className="panel setup-basic"><div className="setup-section-head"><div><h3>项目设置</h3></div></div>{project && !['KNOWLEDGE_BASE', 'CAREER'].includes(mode) && <p className="muted">历史模式：{modeName(mode)}</p>}<div className="setup-form-grid"><label>项目名称<input value={name} onChange={event => setName(event.target.value)} placeholder="例如：数控车工综合实训考核" maxLength={180} /></label><label>知识库<select value={baseId} disabled={Boolean(project) || mode === 'CAREER'} onChange={event => setBaseId(event.target.value)}>{bases.map(base => <option key={base.id} value={base.id}>{base.name}</option>)}</select>{project && <small>项目保存后不能切换知识库，避免资料版本串库。</small>}</label><label>试卷套数<input type="number" min={1} max={20} value={variantCount} onChange={event => setVariantCount(Math.max(1, Math.min(20, Number(event.target.value))))} /></label></div></section>
@@ -513,7 +417,7 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
       </article>)}</div>
     </section>}
     {step === 2 && !generationRun && <section className="panel project-step-empty"><h3>还没有可审核的题目</h3><p>先完成资料检查并生成题目。</p><button className="secondary" onClick={() => setStep(1)}>前往生成</button></section>}
-    {currentPlan && generationRun && <section className="panel question-review-queue"><div className="setup-section-head"><div><h3>逐题审核</h3></div>{exportReadiness && <strong className={exportReadiness.ready ? 'valid' : 'invalid'}>{exportReadiness.ready ? '可以导出' : `待通过 ${exportReadiness.totalCount - exportReadiness.approvedCount} 题`}</strong>}</div><p className="muted">核对题目、答案与评分细则，通过后即可导出。</p><div className="question-review-list">{generationRun.items.filter(item => mapText(item.question, 'stem')).map(renderGenerationItem)}</div></section>}
+    {step === 2 && project && generationRun && <QuestionQualityWorkbench key={generationRun.id} auth={auth} projectId={project.id} run={generationRun} onRefresh={async () => { const refreshed = await request<GenerationRun>(`/api/exam-projects/${project.id}/variant-generation-runs/${generationRun.id}`, auth); setGenerationRun(refreshed); }} />}
     {step === 3 && !generationRun && <section className="panel project-step-empty"><h3>暂无可导出的题目</h3><p>生成并审核题目后，导出选项会显示在这里。</p><button className="secondary" onClick={() => setStep(1)}>前往生成</button></section>}
     {currentPlan && generationRun && <section className="panel project-export-panel"><div className="setup-section-head"><div><p className="section-kicker">09 · 审核后交付</p><h3>选择要导出的交付内容</h3></div><strong className={exportReadiness?.ready ? 'valid' : 'invalid'}>{exportReadiness?.ready ? '服务端已解锁导出' : '审核未完成'}</strong></div><p className="muted">全部题目通过审核后才能导出。完成后可在下方下载文件。</p>{exportReadiness?.blockers.length ? <div className="export-readiness"><b>暂不能导出</b><ul>{exportReadiness.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul></div> : exportReadiness?.ready && <><div className="project-export-options">{projectExportTypes.map(item => <label className={`project-export-option ${selectedExportTypes.includes(item.id) ? 'selected' : ''}`} key={item.id}><input type="checkbox" checked={selectedExportTypes.includes(item.id)} onChange={() => toggleExportType(item.id)} /><span><b>{item.name}</b><small>{item.detail}</small></span></label>)}</div><button onClick={() => void startProjectExport()} disabled={busy || !selectedExportTypes.length}>{busy ? '正在提交导出…' : '生成选中的交付文件'}</button></>}{projectExports.length > 0 && <div className="project-export-history"><div className="project-export-history-head"><b>导出记录</b><span>同一生成批次可保留多次导出记录</span></div>{projectExports.slice(0, 5).map(run => <article className="project-export-run" key={run.id}><div><b>{exportStatusName(run.status)}</b><span>{new Date(run.createdAt).toLocaleString()} · {run.completedCount}/{run.requestedCount} 项</span>{run.errorMessage && <small className="generation-run-error">{run.errorMessage}</small>}</div><div className="project-export-artifacts">{run.artifacts.map(artifact => <button className="secondary" key={artifact.id} disabled={run.status !== 'DOWNLOAD_READY'} onClick={() => void downloadProjectArtifact(artifact)}>{exportTypeName(artifact.outputType)} · 下载</button>)}</div></article>)}</div>}</section>}
     <section className="setup-footer"><label className="setup-authorization"><input type="checkbox" checked={authorized} onChange={event => setAuthorized(event.target.checked)} /><span><b>我确认拥有所选资料的使用授权</b><small>系统会记录本次确认和资料版本。</small></span></label><div className="setup-actions"><button className="secondary" onClick={() => onNavigate(mode === 'CAREER' ? '职业标准' : '总览')}>{mode === 'CAREER' ? '返回职业解析' : '返回项目列表'}</button>{project && !['KNOWLEDGE_BASE', 'CAREER'].includes(mode) && <button className="secondary" onClick={() => onNavigate(mode === 'STANDARD' ? '职业标准' : '资料组卷')}>进入历史资料准备</button>}<button onClick={() => void save()} disabled={busy}>{busy ? '正在保存…' : project ? '保存并继续' : '创建并继续'}</button></div></section>
