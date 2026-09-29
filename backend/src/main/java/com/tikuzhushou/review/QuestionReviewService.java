@@ -56,8 +56,8 @@ public class QuestionReviewService {
     String comment = Objects.toString(request.comment(), current.comment()).trim();
     UUID reviewer = access.currentUserId(); int version = current.version() + 1; Instant now = Instant.now();
     try {
-      jdbc.update("update question_reviews set reviewer_id=?,review_status=?,locked=?,comment=?,question_json=?,version=?,updated_at=? where job_id=? and sequence_no=?",
-          reviewer, status, nextLocked, comment, json.writeValueAsString(question), version, Timestamp.from(now), jobId, sequence);
+      jdbc.update("update question_reviews set reviewer_id=?,review_status=?,locked=?,comment=?,question_json=?,version=?,updated_at=?,approved_at=case when ? in ('APPROVED','LOCKED') then coalesce(approved_at,?) else null end where job_id=? and sequence_no=?",
+          reviewer, status, nextLocked, comment, json.writeValueAsString(question), version, Timestamp.from(now), status, Timestamp.from(now), jobId, sequence);
       UUID reviewId = current.id();
       jdbc.update("insert into question_review_events(id,review_id,actor_id,action,comment,snapshot_json,created_at) values(?,?,?,?,?,?,?)",
           UUID.randomUUID(), reviewId, reviewer, request.question() == null || request.question().isEmpty() ? "STATUS_CHANGED" : "QUESTION_EDITED",

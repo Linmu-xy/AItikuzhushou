@@ -74,7 +74,7 @@ function QuestionEditor({ auth, projectId, root, item, runActive, inspection, on
     if (decision === 'APPROVE' && !checks.every(([key]) => checklist[key])) throw new Error('请逐项核对人工审题清单。');
     const question = decision === 'REOPEN' ? undefined : { ...draft, scoringItems: scores, scoringRubric: scores.length ? scores.map(row => `${row.criterion}（${row.points}分）`).join('；') : draft.scoringRubric, qualityChecklist: checklist };
     await api(`${root}/items/${item.id}/review`, auth, { method: 'PATCH', body: JSON.stringify({ decision, expectedVersion: item.questionVersion || 1, comment, question }) });
-    onDirty(false); setEditing(false); setProposal(null); setNotice('已保存。'); await onRefresh();
+    onDirty(false); setEditing(false); setProposal(null); setNotice(decision === 'APPROVE' ? '已通过审核，题目已归档到题库。' : decision === 'REOPEN' ? '已重新打开审核，题目暂时退出题库。' : '已保存。'); await onRefresh();
   });
   const scoreTotal = scores.reduce((sum, row) => sum + (Number(row.points) || 0), 0);
   return <article className="quality-detail"><header className="quality-detail-heading"><div><h4>{item.variantLabel} 卷 · 第 {item.sequenceNo} 题</h4><p>{item.typeLabel} · {difficultyName[item.difficulty] || item.difficulty} · {item.points} 分 · v{item.questionVersion || 1}</p></div><span className={`quality-state ${item.status.toLowerCase()}`}>{statusName[item.status] || item.status}</span></header>

@@ -6,15 +6,17 @@ import { MaterialExamWorkspace } from './MaterialExamWorkspace';
 import { ProjectHubWorkspace, type ProjectMode } from './ProjectHubWorkspace';
 import { ProjectSetupWorkspace } from './ProjectSetupWorkspace';
 import { TaskCenterWorkspace } from './TaskCenterWorkspace';
+import { QuestionBankWorkspace } from './QuestionBankWorkspace';
 import { PanelToggleIcon } from './PanelToggleIcon';
 import { AdminHealthPanel, BlueprintInsights, confirmDelivery, DeliveryPreflight, DocumentQualityPanel, ImportExportCenter, MarkdownReviewPanel, ReviewWorkbench, TableReviewPanel } from './ProductPolish';
 import { ProfileAvatar, ProfileSettings, type AccountProfile } from './ProfileSettings';
 
-function NavIcon({ kind }: { kind: 'assistant' | 'projects' | 'library' | 'tasks' | 'tools' }) {
+function NavIcon({ kind }: { kind: 'assistant' | 'projects' | 'library' | 'bank' | 'tasks' | 'tools' }) {
   const paths = {
     assistant: <><path d="M5 5.5h14v10H9l-4 3v-13Z" /><path d="M9 9.5h6M9 12.5h4" /></>,
     projects: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h8M8 13h8M8 17h5" /></>,
     library: <><path d="M5 4.5h11a3 3 0 0 1 3 3v12H8a3 3 0 0 0-3 1V4.5Z" /><path d="M5 17.5h11M9 9h6" /></>,
+    bank: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 9h8M8 13h8M8 17h5M7 3h10" /></>,
     tasks: <><path d="M5 6h14M5 12h14M5 18h14" /><path d="m7 6 1 1 2-2m-3 7 1 1 2-2" /></>,
     tools: <><path d="M14 5a4 4 0 0 0-4.5 5.2L5 14.7a2.2 2.2 0 0 0 3.3 3L12.8 13A4 4 0 0 0 18 8l-2.5 2.5-2.5-.5-.5-2.5L15 5Z" /></>
   };
@@ -387,10 +389,12 @@ export default function App() {
   const content: Record<string, React.ReactNode> = { '总览': <ProjectHubWorkspace auth={auth} bases={bases} currentBase={currentBase} onStartProject={openProject} onOpenProject={project => openProject(project.mode, project.id)} onNavigate={navigate} />, '命题项目': <ProjectSetupWorkspace key={projectId || `${projectMode}:${projectDraft?.requirement || ''}:${projectDraft?.webSearch || false}`} auth={auth} projectId={projectId} initialMode={projectMode} initialSeed={projectDraft} defaultWebSearchEnabled={profile?.assistantWebSearch ?? false} initialBaseId={baseId} initialSourceId={projectMode === 'CAREER' && !projectId ? standard?.documentId : undefined} bases={bases} onNavigate={navigate} onMessage={setMessage} />, '职业命题': <ProjectSetupWorkspace key={projectId || `career:${projectDraft?.requirement || ''}`} auth={auth} projectId={projectId} initialMode="CAREER" initialSeed={projectDraft} defaultWebSearchEnabled={profile?.assistantWebSearch ?? false} initialBaseId={baseId} initialSourceId={!projectId ? standard?.documentId : undefined} bases={bases} onNavigate={navigate} onMessage={setMessage} />, 'AI 助手': null, '知识库': knowledge, '资料组卷': <MaterialExamWorkspace auth={auth} onMessage={setMessage} />, '文档预览': <><section className="panel"><div className="section-heading"><div><p className="eyebrow">文档预览</p><h2>{docs.find(doc => doc.id === documentId)?.originalFilename || '当前文档'}</h2></div><button className="secondary" disabled={busy || previewTaskRunning || !documentId} onClick={() => { if (window.confirm('重新解析会从原文件提取内容，可能覆盖已校对的页面和表格。确定继续吗？')) parse(documentId); }}>{previewTaskRunning ? '解析中…' : '重新解析此文档'}</button></div></section><DocumentQualityPanel key={`quality-${previewRefreshKey}`} documentId={documentId} /><MarkdownReviewPanel key={`markdown-${previewRefreshKey}`} documentId={documentId} onMessage={setMessage} /><TableReviewPanel key={`table-${previewRefreshKey}`} documentId={documentId} onMessage={setMessage} /></>, '职业标准': careerTool, '细目表': <>{levelPresetPanel}{assessmentDesignPanel}{generationModePanel}<BlueprintInsights rows={blueprint?.result ?? []} />{blueprintPage}</>, '题库任务': <TaskCenterWorkspace auth={auth} legacyJobs={jobs} onOpenProject={project => openProject(project.mode, project.id)} />, '题目审核': <ReviewWorkbench jobs={jobs} onMessage={setMessage} />, '导入导出': <ImportExportCenter onImported={loadJobs} onMessage={setMessage} />, '质量验收': quality, '质量验收详情': qualityDetail, '用户角色': users, '操作日志': audit, '模型额度': quotaPage, '个人中心': profilePage, '后台管理': <>{adminPage}{modelConfigurationPanel}<AdminHealthPanel /></> };
 const assistantWorkspace = <AssistantWorkspace conversations={assistantConversations} activeConversationId={assistantConversationId} knowledgeBaseName={currentBase?.name} knowledgeBases={bases} selectedKnowledgeBaseId={baseId} documentCount={docs.filter(doc => ['PARSED', 'PARSED_PARTIAL'].includes(doc.status)).length} messages={assistantMessages} attachments={assistantAttachments} input={assistantInput} effort={assistantEffort} webSearch={assistantWebSearch} busy={busy} sending={assistantSending} uploading={assistantUploading} messagesRef={assistantMessagesRef} onCreate={createAssistantConversation} onSelectConversation={chooseAssistantConversation} onDelete={deleteAssistantConversation} onSelectKnowledgeBase={id => { setBaseId(id); setAssistantConversationId(''); setAssistantMessages([]); setAssistantAttachments([]); }} onOpenKnowledgeBase={() => navigate('知识库')} onStartKnowledgeBaseProject={draft => openProject('KNOWLEDGE_BASE', undefined, draft ? { ...draft, webSearch: assistantWebSearch } : { requirement: '', questionCount: 10, questionType: '智能题型', difficulty: '中等', setCount: 1, webSearch: assistantWebSearch })} onInputChange={setAssistantInput} onEffortChange={setAssistantEffort} onWebSearchChange={setAssistantWebSearch} onUpload={uploadAssistantFile} onRemoveAttachment={removeAssistantAttachment} onSubmit={askAssistant} onSuggestedPrompt={setAssistantInput} onAction={confirmAssistantAction} />;
   content['AI 助手'] = assistantWorkspace;
+  content['题库'] = <QuestionBankWorkspace auth={auth} bases={bases} />;
   const navigationItems = [
     { label: 'AI 助手', page: 'AI 助手', icon: 'assistant' },
     { label: '命题项目', page: '总览', icon: 'projects' },
     { label: '知识库', page: '知识库', icon: 'library' },
+    { label: '题库', page: '题库', icon: 'bank' },
     { label: '任务中心', page: '题库任务', icon: 'tasks' }
   ] as const;
   const navActive = (item: string) => page === item || (item === '总览' && page === '命题项目');

@@ -391,13 +391,13 @@ export function ReviewWorkbench({ jobs, onMessage }: { jobs: JobLite[]; onMessag
   useEffect(() => { if (visible.length && !visible.some(item => item.sequence === focusedSequence)) setFocusedSequence(visible[0].sequence); }, [visible, focusedSequence]);
   const update = async (item: ReviewItem, patch: Record<string, unknown>) => {
     setBusy(true); setError('');
-    try { await request(`/api/reviews/jobs/${jobId}/items/${item.sequence}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }); await load(); onMessage(`第 ${item.sequence} 题审核结果已保存并留痕。`); }
+    try { await request(`/api/reviews/jobs/${jobId}/items/${item.sequence}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }); await load(); onMessage(`第 ${item.sequence} 题审核结果已保存${['APPROVED', 'LOCKED'].includes(String(patch.status)) ? '，已归档到题库' : ''}。`); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); setBusy(false); }
   };
   const bulkApprove = async () => {
     const targets = items.filter(item => selected.includes(item.sequence)); if (!targets.length) return;
     setBusy(true); setError('');
-    try { for (const item of targets) await request(`/api/reviews/jobs/${jobId}/items/${item.sequence}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'APPROVED', comment: '批量人工通过' }) }); await load(); onMessage(`已通过 ${targets.length} 道题，全部操作已记录审核轨迹。`); }
+    try { for (const item of targets) await request(`/api/reviews/jobs/${jobId}/items/${item.sequence}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'APPROVED', comment: '批量人工通过' }) }); await load(); onMessage(`已通过 ${targets.length} 道题并归档到题库。`); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '批量审核失败'); setBusy(false); }
   };
   const showEvents = async (item: ReviewItem) => { try { setEvents(await request<ReviewEvent[]>(`/api/reviews/jobs/${jobId}/items/${item.sequence}/events`)); } catch (reason) { setError(reason instanceof Error ? reason.message : '读取历史失败'); } };
