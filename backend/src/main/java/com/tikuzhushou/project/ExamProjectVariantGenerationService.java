@@ -456,13 +456,50 @@ public class ExamProjectVariantGenerationService {
         draft.put("_assessmentAvailableArtifacts", snapshot.sources().stream()
             .map(source -> text(source.get("name"))).filter(name -> name.matches("(?i).*\\.(?:dwg|dxf|step|stp|prt)$"))
             .toList());
-        if (planned.needsImage()) draft.put("stimuli", List.of(Map.of("documentId", planned.documentId(),
-            "page", planned.page(), "x", 0, "y", 0, "width", 100, "height", 100)));
       }
     }
+    attachVisualStimulus(draft, snapshot, planned, seed);
     draft.put("recentQuestionSummaries", List.copyOf(recent));
     draft.put("styleMemories", List.of());
     return draft;
+  }
+
+  /**
+   * Keep a renderable drawing attached even when CAD facts are unavailable. This is
+   * deliberately an evidence/display fallback: exact dimensions still require a
+   * human check against the original page.
+   */
+  private void attachVisualStimulus(Map<String, Object> draft,
+      ExamProjectEvidenceService.PreparationView snapshot,
+      KnowledgeAssessmentPlanningService.PlanItem planned, Seed seed) {
+    Map<String, Object> selected = null;
+    int page = 0;
+    if (planned != null && planned.needsImage() && planned.documentId() != null && planned.page() > 0) {
+      selected = snapshot.sources().stream()
+          .filter(source -> Objects.equals(planned.documentId(), uuid(source.get("sourceId"))))
+          .findFirst().orElse(null);
+      page = planned.page();
+    }
+    if (selected == null) {
+      selected = snapshot.sources().stream()
+          .filter(source -> Boolean.TRUE.equals(source.get("visualOnly")))
+          .filter(source -> source.get("visualPageCount") instanceof Number pages && pages.intValue() > 0)
+          .findFirst().orElse(null);
+      if (selected != null) {
+        int pageCount = ((Number) selected.get("visualPageCount")).intValue();
+        page = 1 + Math.floorMod(seed.sequenceNo() - 1, Math.max(1, pageCount));
+      }
+    }
+    if (selected == null || page < 1) return;
+    UUID sourceId = uuid(selected.get("sourceId"));
+    if (sourceId == null) return;
+    Map<String, Object> stimulus = new LinkedHashMap<>(Map.of("documentId", sourceId,
+        "page", page, "x", 0, "y", 0, "width", 100, "height", 100));
+    if (Boolean.TRUE.equals(selected.get("visualOnly"))) {
+      stimulus.put("visualOnly", true);
+      stimulus.put("label", "CAD 工程图原图；结构化解析不完整，请以原图人工核验");
+    }
+    draft.put("stimuli", List.of(stimulus));
   }
 
   private EvidencePack buildEvidence(ExamProjectEvidenceService.PreparationView snapshot) {
@@ -485,6 +522,10 @@ public class ExamProjectVariantGenerationService {
       Map<String, Object> meta = new LinkedHashMap<>();
       meta.put("sourceId", source.get("sourceId")); meta.put("sourceRole", role);
       meta.put("name", source.get("name")); meta.put("versionRef", source.get("versionRef"));
+      if (source.get("visualPageCount") instanceof Number pages && pages.intValue() > 0) {
+        meta.put("visualPageCount", pages.intValue());
+        meta.put("visualOnly", Boolean.TRUE.equals(source.get("visualOnly")));
+      }
       if (!excerpt.isBlank()) meta.put("excerpt", compact(excerpt, 1_400));
       if (Set.of("STANDARD", "TASK_BOOK").contains(role) && !excerpt.isBlank()) primary.add(role + "《" + text(source.get("name")) + "》：" + excerpt);
       else contextAssets.add(meta);
@@ -495,6 +536,10 @@ public class ExamProjectVariantGenerationService {
     }
     if (primary.isEmpty() && sources.stream().anyMatch(source -> "DOCUMENT".equals(source.get("sourceType"))))
       primary.add("原图资料；具体内容需由多模态模型读取原图确认。");
+    if (primary.isEmpty() && sources.stream().anyMatch(source ->
+        source.get("visualPageCount") instanceof Number pages && pages.intValue() > 0)) {
+      primary.add("已附工程图原图页面；结构化尺寸、标注和视图关系未完全提取，命题时必须以随题原图人工核验。");
+    }
     String primaryEvidence = compact(String.join("\n", primary), 11_000);
     if (primaryEvidence.isBlank()) throw new IllegalArgumentException("冻结资料没有可用于命题的正文或已确认模型事实");
     List<Map<String, Object>> metadata = sources.stream().map(this::sourceMetadata).toList();
@@ -637,7 +682,10 @@ public class ExamProjectVariantGenerationService {
 
   private Map<String, Object> sourceMetadata(Map<String, Object> source) {
     Map<String, Object> result = new LinkedHashMap<>();
-    for (String key : List.of("sourceId", "sourceType", "sourceRole", "name", "status", "versionRef")) result.put(key, source.get(key));
+    for (String key : List.of("sourceId", "sourceType", "sourceRole", "name", "status", "versionRef",
+        "visualPageCount", "visualOnly")) {
+      if (source.containsKey(key)) result.put(key, source.get(key));
+    }
     return result;
   }
 

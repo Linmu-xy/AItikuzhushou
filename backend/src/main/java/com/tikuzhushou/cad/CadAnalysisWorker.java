@@ -89,8 +89,9 @@ public class CadAnalysisWorker {
               String.valueOf(result.getOrDefault("errorCode", "CAD_WORKER_FAILED")),
               String.valueOf(result.getOrDefault("message", "CAD Worker 解析失败")));
         } else {
+          boolean partial = "PARSED_PARTIAL".equals(status) || "ADAPTER_REQUIRED".equals(status) || "UNSUPPORTED".equals(status);
           tasks.update(taskId, "SUCCEEDED", status, 100, 1, 1,
-              "CAD 文件分析完成：" + status, null, null);
+              partial ? "已完成可识别部分，原文件仍可用；请查看未解析项" : "CAD 文件分析完成：" + status, null, null);
         }
       } catch (Exception error) {
         tasks.update(taskId, "FAILED", "CAD_PARSE_FAILED", 100, 0, 0,

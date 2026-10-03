@@ -23,7 +23,9 @@ public class DocumentIntakeService {
   private static final Set<String> TYPES = Set.of("application/pdf", "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-powerpoint",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation", "image/jpeg", "image/png",
-      "image/gif", "image/webp");
+      "image/gif", "image/webp", "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain",
+      "text/csv");
   private final JdbcTemplate jdbc;
   private final KnowledgeBaseAccessService access;
   private final ObjectStorageService storage;
@@ -127,6 +129,9 @@ public class DocumentIntakeService {
     if (value.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     if (value.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
     if (value.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    if (value.endsWith(".xls")) return "application/vnd.ms-excel";
+    if (value.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if (value.endsWith(".txt") || value.endsWith(".csv")) return "text/plain";
     if (value.endsWith(".png")) return "image/png";
     if (value.endsWith(".jpg") || value.endsWith(".jpeg")) return "image/jpeg";
     return null;

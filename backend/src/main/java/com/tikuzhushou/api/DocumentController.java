@@ -106,8 +106,9 @@ public class DocumentController {
   }
 
   @GetMapping(value = "/{id}/pages/{page}/image", produces = MediaType.IMAGE_PNG_VALUE)
-  ResponseEntity<byte[]> pageImage(@PathVariable UUID id, @PathVariable int page) {
-    return ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).body(parsing.renderPage(id, page));
+  ResponseEntity<byte[]> pageImage(@PathVariable UUID id, @PathVariable int page,
+      @RequestParam(name = "dpi", defaultValue = "150") int dpi) {
+    return ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).body(parsing.renderPage(id, page, dpi));
   }
 
   @PatchMapping("/{documentId}/chunks/{chunkId}")

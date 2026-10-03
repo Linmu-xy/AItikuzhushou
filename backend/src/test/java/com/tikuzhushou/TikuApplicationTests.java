@@ -908,6 +908,59 @@ class TikuApplicationTests {
     }
   }
 
+  @Test void cadPdfSkipsGenericTableOcrAndKeepsPageReviewMarker() throws Exception {
+    var originalOcr = org.springframework.test.util.ReflectionTestUtils.getField(parsing, "ocr");
+    java.nio.file.Path pdf = java.nio.file.Files.createTempFile("tiku-cad-drawing-", ".pdf");
+    try {
+      org.springframework.test.util.ReflectionTestUtils.setField(parsing, "ocr",
+          new com.tikuzhushou.ocr.VisionOcrService(deepSeek, new com.fasterxml.jackson.databind.ObjectMapper(), true));
+      try (var document = new org.apache.pdfbox.pdmodel.PDDocument()) {
+        document.getDocumentInformation().setProducer("CAXA CAD");
+        document.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+        document.save(pdf.toFile());
+      }
+
+      Object extraction = org.springframework.test.util.ReflectionTestUtils.invokeMethod(parsing, "extract", pdf,
+          "application/pdf", (com.tikuzhushou.document.DocumentParsingService.ProgressListener) (stage, progress, processed, total, message) -> { });
+      Integer unresolved = org.springframework.test.util.ReflectionTestUtils.invokeMethod(extraction, "unresolvedPages");
+      String text = org.springframework.test.util.ReflectionTestUtils.invokeMethod(extraction, "text");
+      @SuppressWarnings("unchecked")
+      java.util.List<String> warnings = org.springframework.test.util.ReflectionTestUtils.invokeMethod(extraction, "warnings");
+      assertEquals(0, unresolved);
+      assertTrue(text.contains("工程图页面"));
+      assertTrue(warnings.stream().anyMatch(value -> value.contains("CAD 工程图 PDF")));
+      String qualityText = org.springframework.test.util.ReflectionTestUtils.invokeMethod(extraction, "qualityText");
+      assertTrue(qualityText.isBlank());
+      verifyNoInteractions(deepSeek);
+    } finally {
+      org.springframework.test.util.ReflectionTestUtils.setField(parsing, "ocr", originalOcr);
+      java.nio.file.Files.deleteIfExists(pdf);
+    }
+  }
+
+  @Test void embeddedDrawingPageDetectorUsesImageAndEngineeringTextTogether() throws Exception {
+    try (var document = new org.apache.pdfbox.pdmodel.PDDocument()) {
+      var page = new org.apache.pdfbox.pdmodel.PDPage();
+      document.addPage(page);
+      var image = new java.awt.image.BufferedImage(1200, 800, java.awt.image.BufferedImage.TYPE_INT_RGB);
+      var graphics = image.createGraphics(); graphics.setColor(java.awt.Color.WHITE); graphics.fillRect(0, 0, 1200, 800);
+      graphics.setColor(java.awt.Color.BLACK); graphics.drawRect(40, 40, 1120, 700); graphics.drawLine(200, 400, 1000, 400); graphics.dispose();
+      try (var output = new java.io.ByteArrayOutputStream()) {
+        javax.imageio.ImageIO.write(image, "png", output);
+        var xObject = org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject.createFromByteArray(document, output.toByteArray(), "drawing");
+        try (var content = new org.apache.pdfbox.pdmodel.PDPageContentStream(document, page)) {
+          content.drawImage(xObject, 72, 120, 420, 280);
+        }
+      }
+      Boolean detected = org.springframework.test.util.ReflectionTestUtils.invokeMethod(parsing,
+          "looksLikeEngineeringDrawingPage", page, "AutoCAD 零件图 技术要求", "AutoCAD 零件图 技术要求");
+      Boolean textOnly = org.springframework.test.util.ReflectionTestUtils.invokeMethod(parsing,
+          "looksLikeEngineeringDrawingPage", page, "本页说明 AutoCAD 软件操作", "本页说明 AutoCAD 软件操作");
+      assertTrue(Boolean.TRUE.equals(detected));
+      assertFalse(Boolean.TRUE.equals(textOnly));
+    }
+  }
+
   @Test void visionTableJsonSupportsPngAndJpegInputs() {
     var service = new com.tikuzhushou.ocr.VisionOcrService(
         deepSeek, new com.fasterxml.jackson.databind.ObjectMapper(), true);

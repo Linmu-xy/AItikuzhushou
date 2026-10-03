@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-type Stimulus = { documentId: string; page: number; x?: number; y?: number; width?: number; height?: number };
+type Stimulus = { documentId: string; page: number; x?: number; y?: number; width?: number; height?: number; visualOnly?: boolean; label?: string };
 
 export function QuestionStimulusPreview({ projectId, auth, stimuli }: {
   projectId: string; auth: string; stimuli: unknown;
@@ -8,10 +8,11 @@ export function QuestionStimulusPreview({ projectId, auth, stimuli }: {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [error, setError] = useState('');
   const all = Array.isArray(stimuli) ? stimuli as Stimulus[] : [];
-  const first = all[0];
-  const documentId = first?.documentId;
-  const page = first?.page;
-  const stimuliKey = JSON.stringify(all.slice(0, 2));
+ const first = all[0];
+ const documentId = first?.documentId;
+ const page = first?.page;
+  const visualOnly = all.some(item => item.visualOnly);
+ const stimuliKey = JSON.stringify(all.slice(0, 2));
 
   useEffect(() => {
     if (!projectId || !documentId || !page) return;
@@ -43,6 +44,6 @@ export function QuestionStimulusPreview({ projectId, auth, stimuli }: {
       aria-label={index === 0 ? '查看题目原图' : '查看题目局部放大图'}>
       <img src={url} alt={index === 0 ? `题目所需资料图，第 ${page} 页` : '题目局部放大图'} loading="lazy" />
     </a>) : <div className="question-stimulus-placeholder">{error || '正在加载题目原图…'}</div>}
-    <figcaption>题目配图{imageUrls.length > 1 ? '与局部放大图' : ''} · 点击查看</figcaption>
-  </figure>;
+    <figcaption>{visualOnly ? '题目配图 · 原图人工核验' : `题目配图${imageUrls.length > 1 ? '与局部放大图' : ''}`} · 点击查看</figcaption>
+ </figure>;
 }

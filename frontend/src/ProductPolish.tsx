@@ -131,6 +131,14 @@ function BlockDocument({ content, tables }: { content?: PageContent; tables: Par
   })}</div>;
 }
 
+function OriginalPageImage({ documentId, page, drawing }: { documentId: string; page: number; drawing: boolean }) {
+  const imageUrl = `/api/documents/${documentId}/pages/${page}/image?dpi=300`;
+  return <div className="engineering-drawing-page">
+    <div className="engineering-drawing-note"><strong>{drawing ? '工程图原页' : '原页截图'}</strong><span>{drawing ? '300 DPI 高清复现；尺寸、标注、剖面和视图关系以原图为准。' : '本页未完成可靠结构化 OCR，已保留 300 DPI 高清原页；请以原图核验。'}</span><a href={imageUrl} target="_blank" rel="noreferrer">打开高清页</a></div>
+    <div className="engineering-drawing-image-wrap"><img src={imageUrl} alt={`PDF 第 ${page} 页高清原页`} loading="eager" /></div>
+  </div>;
+}
+
 /** React escapes every cell and line, so parsed documents can never inject executable HTML. */
 function SafeMarkdown({ source, tables = [], page }: { source: string; tables?: ParsedTable[]; page?: number }) {
   const lines = source.replace(/\r/g, '').split('\n'); const blocks: ReactNode[] = [];
@@ -232,6 +240,8 @@ export function MarkdownReviewPanel({ documentId, onMessage }: { documentId: str
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const readerAnchor = useRef<HTMLDivElement>(null); const compareContainer = useRef<HTMLDivElement>(null); const loadedDocument = useRef('');
   const selected = pages.find(page => page.page === selectedPage) || pages[0];
+  const selectedIsDrawing = Boolean(selected?.markdown.includes('[工程图页面'));
+  const selectedNeedsOriginal = Boolean(selected?.markdown.includes('[工程图页面') || selected?.markdown.includes('[原页截图'));
   const load = async (preferredPage?: number, enableUrlSync = false) => {
     if (!documentId) return; setError('');
     try {
@@ -275,7 +285,11 @@ export function MarkdownReviewPanel({ documentId, onMessage }: { documentId: str
   }, [documentId, selected?.page, mode, urlSyncReady]);
   useEffect(() => {
     if (!selected) return; const currentIndex = pages.findIndex(page => page.id === selected.id);
-    for (const adjacent of [pages[currentIndex - 1], pages[currentIndex + 1]]) if (adjacent) { const image = new Image(); image.src = `/api/documents/${documentId}/pages/${adjacent.page}/image`; }
+    for (const adjacent of [pages[currentIndex - 1], pages[currentIndex + 1]]) if (adjacent) {
+      const image = new Image();
+      const dpi = adjacent.markdown.includes('[工程图页面') || adjacent.markdown.includes('[原页截图') ? 300 : 150;
+      image.src = `/api/documents/${documentId}/pages/${adjacent.page}/image?dpi=${dpi}`;
+    }
   }, [documentId, pages, selected?.id]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -315,9 +329,9 @@ export function MarkdownReviewPanel({ documentId, onMessage }: { documentId: str
       <div className="markdown-toolbar"><div className="page-selector"><label>页面<select value={selected?.page || 1} onChange={event => { const page = pages.find(item => item.page === Number(event.target.value)); if (page) void choosePage(page); }}>{pages.map(page => <option key={page.id} value={page.page}>第 {page.page} 页 · v{page.version} · {page.reviewStatus === 'HUMAN_CONFIRMED' ? '已确认' : '待确认'}</option>)}</select></label></div>{pager()}<div className="view-switch"><button className={mode === 'READ' ? 'active' : 'secondary'} onClick={() => setMode('READ')}>阅读模式</button><button className={mode === 'SOURCE' ? 'active' : 'secondary'} onClick={() => setMode('SOURCE')}>源码编辑</button><button className={mode === 'COMPARE' ? 'active' : 'secondary'} onClick={() => setMode('COMPARE')}>原文对照</button></div></div>
       {selected && <>
         <div ref={readerAnchor} className="reader-scroll-anchor" />
-        {mode === 'READ' && <div className="markdown-reader-shell"><button className="side-page-button previous" aria-label="上一页（侧边）" onClick={() => void navigatePage(-1)} disabled={!hasPrevious}>‹</button><article className="markdown-reader"><BlockDocument content={pageContent} tables={tables} /></article><button className="side-page-button next" aria-label="下一页（侧边）" onClick={() => void navigatePage(1)} disabled={!hasNext}>›</button></div>}
+        {mode === 'READ' && <div className="markdown-reader-shell"><button className="side-page-button previous" aria-label="上一页（侧边）" onClick={() => void navigatePage(-1)} disabled={!hasPrevious}>‹</button><article className={`markdown-reader${selectedNeedsOriginal ? ' drawing-reader' : ''}`}>{selectedNeedsOriginal ? <OriginalPageImage documentId={documentId} page={selected.page} drawing={selectedIsDrawing} /> : <BlockDocument content={pageContent} tables={tables} />}</article><button className="side-page-button next" aria-label="下一页（侧边）" onClick={() => void navigatePage(1)} disabled={!hasNext}>›</button></div>}
         {mode === 'SOURCE' && <div className="markdown-source"><textarea value={draft} onChange={event => setDraft(event.target.value)} rows={30} spellCheck={false} /><small>支持 # 标题、- 列表、**加粗**、`代码` 和 GFM 表格。页码标记由系统自动维护。</small></div>}
-        {mode === 'COMPARE' && <><div className="compare-controls"><div className="mobile-compare-tabs"><button className={mobileComparePane === 'PDF' ? 'active' : 'secondary'} onClick={() => setMobileComparePane('PDF')}>PDF 原文</button><button className={mobileComparePane === 'MARKDOWN' ? 'active' : 'secondary'} onClick={() => setMobileComparePane('MARKDOWN')}>阅读版结果</button></div><label>原文宽度 <input type="range" min="35" max="65" value={compareRatio} onChange={event => setCompareRatio(Number(event.target.value))} /><b>{compareRatio}%</b></label></div><div ref={compareContainer} className="markdown-compare" style={{ '--compare-left': `${compareRatio}%` } as CSSProperties}><article className={mobileComparePane === 'PDF' ? 'mobile-active' : 'mobile-inactive'}><header><b>PDF 第 {selected.page} 页</b><span>原文只读</span></header><div className="page-image-wrap"><img src={`/api/documents/${documentId}/pages/${selected.page}/image`} alt={`PDF 第 ${selected.page} 页`} /></div></article><button className="compare-divider" aria-label="拖动调整原文与解析结果宽度" onPointerDown={beginCompareResize}><i /></button><article className={mobileComparePane === 'MARKDOWN' ? 'mobile-active' : 'mobile-inactive'}><header><b>阅读版解析结果</b><span>v{selected.version}</span></header><div className="markdown-reader"><BlockDocument content={pageContent} tables={tables} /></div></article></div></>}
+        {mode === 'COMPARE' && <><div className="compare-controls"><div className="mobile-compare-tabs"><button className={mobileComparePane === 'PDF' ? 'active' : 'secondary'} onClick={() => setMobileComparePane('PDF')}>PDF 原文</button><button className={mobileComparePane === 'MARKDOWN' ? 'active' : 'secondary'} onClick={() => setMobileComparePane('MARKDOWN')}>阅读版结果</button></div><label>原文宽度 <input type="range" min="35" max="65" value={compareRatio} onChange={event => setCompareRatio(Number(event.target.value))} /><b>{compareRatio}%</b></label></div><div ref={compareContainer} className="markdown-compare" style={{ '--compare-left': `${compareRatio}%` } as CSSProperties}><article className={mobileComparePane === 'PDF' ? 'mobile-active' : 'mobile-inactive'}><header><b>PDF 第 {selected.page} 页</b><span>{selectedNeedsOriginal ? '300 DPI 高清原页' : '原文只读'}</span></header><div className="page-image-wrap"><img src={`/api/documents/${documentId}/pages/${selected.page}/image?dpi=${selectedNeedsOriginal ? 300 : 150}`} alt={`PDF 第 ${selected.page} 页`} /></div></article><button className="compare-divider" aria-label="拖动调整原文与解析结果宽度" onPointerDown={beginCompareResize}><i /></button><article className={mobileComparePane === 'MARKDOWN' ? 'mobile-active' : 'mobile-inactive'}><header><b>{selectedNeedsOriginal ? (selectedIsDrawing ? '工程图识别提示' : '原页截图兜底') : '阅读版解析结果'}</b><span>v{selected.version}</span></header><div className="markdown-reader">{selectedNeedsOriginal ? <OriginalPageImage documentId={documentId} page={selected.page} drawing={selectedIsDrawing} /> : <BlockDocument content={pageContent} tables={tables} />}</div></article></div></>}
         {mode === 'SOURCE' && <>
           <div className="markdown-savebar"><label><input type="checkbox" checked={rebuildVectors} onChange={event => setRebuildVectors(event.target.checked)} />保存后重建知识库向量</label><span>{selected.confirmedBy ? `最近确认：${selected.confirmedBy}` : '当前为自动解析结果'}</span><button onClick={() => void save()} disabled={busy || draft.trim() === selected.markdown.trim()}>{busy ? '正在保存并重建…' : '确认修改并保存'}</button></div>
           <details className="page-version-history"><summary>版本历史（{versions.length}）</summary>{versions.map(version => <div key={version.version}><b>v{version.version} · {version.reviewStatus === 'HUMAN_CONFIRMED' ? '人工确认' : '自动解析'}</b><span>{version.actor} · {new Date(version.createdAt).toLocaleString()}</span><small>{version.action}</small></div>)}</details>

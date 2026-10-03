@@ -246,9 +246,9 @@ def analyze(path: Path, preview: Path | None, deflection: float, max_triangles: 
         return analyze_dxf(path)
     if extension in {".prt", ".dwg", ".x_t"}:
         return empty_result(path, "format-signature-only", "ADAPTER_REQUIRED", [
-            f"{extension} 需要专用 CAD 适配器，当前 Worker 不会伪造几何内容。"
+            f"{extension} 尚未接入专用 CAD 适配器；以下内容未解析：三维几何、尺寸与工程标注、图层/视图关系、参数与特征树。原文件已保留，可继续下载、人工查看或接入对应适配器。"
         ])
-    return empty_result(path, "none", "UNSUPPORTED", [f"暂不支持 {extension} 文件。"])
+    return empty_result(path, "none", "UNSUPPORTED", [f"暂不支持 {extension} 文件；几何、标注、图层和视图关系均未解析，但原文件已保留可继续使用。"])
 
 
 def main() -> int:

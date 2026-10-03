@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.hslf.usermodel.HSLFSlideShow;
@@ -40,6 +41,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class DocumentParsingService {
   private static final Pattern PAGE_MARKER = Pattern.compile("\\[第(\\d+)页]");
+  private static final List<String> ENGINEERING_DRAWING_METADATA_MARKERS = List.of(
+      "caxa", "autocad", "solidworks", "catia", "siemens nx", "ug nx", "creo",
+      "pro/e", "inventor", "zwcad", "中望cad", "浩辰cad", "cad 202", "cad 20");
+  private static final List<String> ENGINEERING_DRAWING_TEXT_MARKERS = List.of(
+      "工程图", "零件图", "装配图", "机械制图", "技术要求", "形位公差", "粗糙度",
+      "尺寸标注", "标注尺寸", "剖视图", "断面图", "图框", "标题栏", "基准");
   private static final ProgressListener NOOP = (stage, progress, processed, total, message) -> { };
   private final DocumentIntakeService intake;
   private final JdbcTemplate jdbc;
@@ -87,16 +94,30 @@ public class DocumentParsingService {
       progress.update("TEXT_EXTRACTING", 6, 0, 0, "正在检测文档文字层");
       Extraction extraction = extract(path, source.mediaType(), progress);
       progress.update("TEXT_CLEANING", 70, 0, 0, "正在清理 OCR 和文字层结果");
-      double quality = textQuality(extraction.text());
-      // A page with an unresolved OCR/table marker is never silently promoted to a usable standard.
-      // High text quality cannot prove that a lost table cell or continuation heading is correct.
-      boolean acceptable = quality >= 0.72 && extraction.unresolvedPages() == 0;
-      String status = acceptable ? "PARSED" : "OCR_REQUIRED";
+      // CAD pages remain in the extracted document, but their drawing graphics do not
+      // dilute the quality score for the readable prose pages.
+      double quality = textQuality(extraction.qualityText());
+      // A page that cannot be trusted is kept as an original-page fallback.  It must not
+      // discard the readable pages in the same document, but it also must not be silently
+      // promoted to a fully parsed standard.
+      boolean hasReadableBody = quality >= 0.72;
+      boolean hasVisualFallback = extraction.visualOnlyPages() > 0;
+      boolean partial = hasVisualFallback && !extraction.text().isBlank();
+      String status = hasReadableBody
+          ? (hasVisualFallback ? "PARSED_PARTIAL" : extraction.unresolvedPages() == 0 ? "PARSED" : "OCR_REQUIRED")
+          : (partial ? "PARSED_PARTIAL" : "OCR_REQUIRED");
       List<String> warnings = new ArrayList<>(extraction.warnings());
-      if ("OCR_REQUIRED".equals(status)) warnings.add("仍有较多页面文字不足或不可辨认，禁止直接生成职业标准");
+      if ("PARSED_PARTIAL".equals(status)) {
+        warnings.add("部分页面未完成可靠结构化解析，已保留原页高清截图；可解析内容已保留，请以原图核验");
+      } else if ("OCR_REQUIRED".equals(status)) {
+        boolean noReadableBody = extraction.qualityText().replaceAll("\\s", "").isBlank();
+        warnings.add(noReadableBody
+            ? "未检测到足够的可计入正文文字；工程图页面已保留但不计入文字质量，禁止直接生成职业标准"
+            : "仍有非工程图页面文字不足或不可辨认，禁止直接生成职业标准");
+      }
       progress.update("CHAPTER_DETECTING", 76, 0, 0, "正在识别标题和章节层级");
       String markdown = canonicalMarkdown(extraction.text());
-      var result = fromText(id, status, markdown, warnings, extraction.tables(), Instant.now());
+      var result = fromText(id, status, markdown, warnings, extraction.tables(), Instant.now(), quality);
       progress.update("CHUNKING", 82, result.chunks().size(), result.chunks().size(), "已完成语义分块");
       jdbc.update("update source_documents set extracted_text=?,status=?,parse_quality=?,parse_warnings=?,updated_at=? where id=?",
           markdown, result.status(), result.textQuality(), json.writeValueAsString(result.warnings()),
@@ -123,7 +144,7 @@ public class DocumentParsingService {
     List<String> warnings;
     try { warnings = row.warnings() == null ? List.of() : json.readValue(row.warnings(), new com.fasterxml.jackson.core.type.TypeReference<>() { }); }
     catch (Exception ignored) { warnings = List.of("历史解析警告数据无法读取"); }
-    var rebuilt = fromText(id, row.status(), row.text(), warnings, loadTables(id), row.updatedAt().toInstant());
+    var rebuilt = fromText(id, row.status(), row.text(), warnings, loadTables(id), row.updatedAt().toInstant(), row.quality() / 100d);
     parsed.put(id, rebuilt);
     return rebuilt;
   }
@@ -308,18 +329,18 @@ public class DocumentParsingService {
         List<ParsedTable> tables = vision.tables();
         if (!tables.isEmpty() && !ocr.enabled()) {
           String text = visionPageMarkdown(1, vision.markdown(), tables);
-          return new Extraction(text, goodText(text) ? 0 : 1, List.copyOf(warnings), tables);
+          return new Extraction(text, goodText(text) ? 0 : 1, List.copyOf(warnings), tables, text, 0);
         }
-        if (!ocr.enabled()) return new Extraction("", 1, List.of("图片文档需要启用 OCR 或表格结构服务"), tables);
+        if (!ocr.enabled()) return new Extraction("", 1, List.of("图片文档需要启用 OCR 或表格结构服务"), tables, "", 0);
         progress.update("OCR_PROCESSING", 35, 1, 1, tables.isEmpty() ? "正在识别图片文字" : "正在识别图片文字并保留表格结构");
         String text = tables.isEmpty() ? ocr.recognizePage(1, List.of(image), mime)
             : visionPageMarkdown(1, vision.markdown(), tables);
         return new Extraction(text, goodText(text) && !vision.needsReview() ? 0 : 1, List.copyOf(warnings),
-            tables.isEmpty() ? parseMarkdownTables(text, 1) : tables);
+            tables.isEmpty() ? parseMarkdownTables(text, 1) : tables, text, 0);
       }
       String text = extractOffice(path, type);
       return new Extraction(text, goodText(text) ? 0 : 1,
-          goodText(text) ? List.of() : List.of("文档可提取文字不足"), parseMarkdownTables(text, 1));
+          goodText(text) ? List.of() : List.of("文档可提取文字不足"), parseMarkdownTables(text, 1), text, 0);
     } catch (IOException e) {
       throw e;
     } catch (Exception e) {
@@ -330,10 +351,16 @@ public class DocumentParsingService {
   private Extraction extractPdf(Path path, ProgressListener progress) throws IOException {
     try (var pdf = Loader.loadPDF(path.toFile())) {
       PDFRenderer renderer = new PDFRenderer(pdf);
+      boolean documentEngineeringDrawing = isLikelyEngineeringDrawing(pdf);
       StringBuilder all = new StringBuilder();
+      StringBuilder qualityText = new StringBuilder();
       List<String> warnings = new ArrayList<>();
       List<ParsedTable> tables = new ArrayList<>();
       int unresolved = 0;
+      int visualOnlyPages = 0;
+      if (documentEngineeringDrawing) {
+        warnings.add("检测到 CAD 工程图 PDF，已保留高清原页并跳过普通表格 OCR；工程图页面不计入正文文字质量，请使用原页或 CAD 专用解析查看尺寸、标注和视图关系");
+      }
       for (int page = 1; page <= pdf.getNumberOfPages(); page++) {
         int pageProgress = 8 + (int) Math.round(58d * (page - 1) / Math.max(1, pdf.getNumberOfPages()));
         progress.update("TEXT_EXTRACTING", pageProgress, page, pdf.getNumberOfPages(),
@@ -344,6 +371,27 @@ public class DocumentParsingService {
         stripper.setEndPage(page);
         String raw = stripper.getText(pdf);
         String local = cleanExtractedText(raw);
+        boolean pageEngineeringDrawing = documentEngineeringDrawing
+            || looksLikeEngineeringDrawingPage(pdf.getPage(page - 1), raw, local);
+
+        // CAD drawings contain many long horizontal/vertical lines, dimension lines,
+        // title-block borders and cross-hairs.  The generic table detector therefore
+        // classifies a drawing as a table and asks the vision model for a table grid,
+        // which produces the blank/partial tables seen in the UI.  A CAD PDF must stay
+        // in the page-image workflow until a drawing-aware parser is available.
+        if (pageEngineeringDrawing) {
+          if (!documentEngineeringDrawing) {
+            warnings.add("第" + page + "页检测为嵌入式 CAD 工程图，已保留高清原页并跳过普通表格 OCR；该页不计入正文文字质量，请以原页高清图为准");
+          }
+          all.append("[第").append(page).append("页]\n");
+          if (goodText(local)) {
+            all.append(local).append('\n');
+          }
+          all.append("[工程图页面：已保留高清原图，暂不按普通表格解析]\n");
+          visualOnlyPages++;
+          continue;
+        }
+
         VisionPageResult vision = VisionPageResult.EMPTY;
         BufferedImage layoutPreview = null;
         boolean structureAttempted = false;
@@ -374,24 +422,41 @@ public class DocumentParsingService {
           BufferedImage tableImage = renderer.renderImageWithDPI(page - 1, tableDpi);
           vision = extractVisionTables(page, tableImage, local, readingContext(all, tables, page - 1), warnings);
         }
-        if (vision.needsReview()) unresolved++;
+        boolean visualFallback = vision.needsReview();
+        if (visualFallback) unresolved++;
         List<ParsedTable> extractedTables = vision.tables();
         if (!extractedTables.isEmpty()) {
           List<ParsedTable> pageTables = stitchReadingContinuation(extractedTables, tables);
-          all.append(visionPageMarkdown(page, vision.markdown(), pageTables)).append('\n');
+          String pageMarkdown = visionPageMarkdown(page, vision.markdown(), pageTables);
+          all.append(pageMarkdown).append('\n');
+          qualityText.append(pageMarkdown).append('\n');
+          if (visualFallback) {
+            all.append("[原页截图：本页表格结构未能可靠解析，请以高清原图核验]\n");
+            warnings.add("第" + page + "页表格结构未能可靠解析，已保留原页高清截图");
+            visualOnlyPages++;
+          }
           tables.addAll(pageTables); pageTables.forEach(table -> warnings.addAll(table.warnings()));
           continue;
         }
         if (goodText(local)) {
-          all.append("[第").append(page).append("页]\n").append(local).append('\n');
+          String pageText = "[第" + page + "页]\n" + local + '\n';
+          all.append(pageText);
+          qualityText.append(pageText);
+          if (visualFallback) {
+            all.append("[原页截图：本页表格结构未能可靠解析，请以高清原图核验]\n");
+            warnings.add("第" + page + "页表格结构未能可靠解析，已保留原页高清截图");
+            visualOnlyPages++;
+          }
           List<ParsedTable> pageTables = parseMarkdownTables(local, page);
           tables.addAll(pageTables);
           continue;
         }
         if (!ocr.enabled() || page > ocrMaxPages) {
           unresolved++;
-          if (!local.isBlank()) all.append("[第").append(page).append("页]\n").append(local).append('\n');
-          warnings.add("第" + page + "页文字层质量不足且未完成 OCR");
+          all.append("[第").append(page).append("页]\n");
+          all.append("[原页截图：本页文字未能可靠识别，请以高清原图核验]\n");
+          warnings.add("第" + page + "页文字层质量不足且未完成 OCR，已保留原页高清截图");
+          visualOnlyPages++;
           continue;
         }
         progress.update("OCR_RENDERING", pageProgress, page, pdf.getNumberOfPages(),
@@ -405,7 +470,9 @@ public class DocumentParsingService {
           BufferedImage tableImage = renderer.renderImageWithDPI(page - 1, tableDpi);
           scannedVision = extractVisionTables(page, tableImage, local, readingContext(all, tables, page - 1), warnings);
         }
-        if (scannedVision.needsReview()) unresolved++;
+        boolean scannedVisualFallback = scannedVision.needsReview();
+        boolean pageVisualFallback = visualFallback || scannedVisualFallback;
+        if (scannedVisualFallback) unresolved++;
         List<ParsedTable> scannedTables = scannedVision.tables();
         String recognized;
         if (scannedTables.isEmpty()) {
@@ -420,9 +487,10 @@ public class DocumentParsingService {
           List<ParsedTable> pageTables = stitchReadingContinuation(scannedTables, tables);
           tables.addAll(pageTables); pageTables.forEach(table -> warnings.addAll(table.warnings()));
         }
-        if (!goodText(recognized)) {
+        boolean recognizedGood = goodText(recognized);
+        if (!recognizedGood) {
           unresolved++;
-          warnings.add("第" + page + "页 OCR 后仍存在较多不可辨认内容");
+          warnings.add("第" + page + "页 OCR 后仍存在较多不可辨认内容，已保留原页高清截图");
         }
         boolean hasPageTable = false;
         for (ParsedTable table : tables) if (table.page() == page) { hasPageTable = true; break; }
@@ -430,10 +498,71 @@ public class DocumentParsingService {
           List<ParsedTable> pageTables = parseMarkdownTables(recognized, page);
           tables.addAll(pageTables);
         }
-        all.append(recognized).append('\n');
+        if (recognizedGood) {
+          all.append(recognized).append('\n');
+          qualityText.append(recognized).append('\n');
+        } else {
+          all.append("[第").append(page).append("页]\n");
+          all.append("[原页截图：本页 OCR 未能可靠识别，请以高清原图核验]\n");
+        }
+        if (recognizedGood && pageVisualFallback) {
+          all.append("[原页截图：本页表格结构未能可靠解析，请以高清原图核验]\n");
+        }
+        if (!recognizedGood || pageVisualFallback) visualOnlyPages++;
       }
-      return new Extraction(all.toString().trim(), unresolved, List.copyOf(new LinkedHashSet<>(warnings)), List.copyOf(tables));
+      return new Extraction(all.toString().trim(), unresolved, List.copyOf(new LinkedHashSet<>(warnings)), List.copyOf(tables), qualityText.toString().trim(), visualOnlyPages);
     }
+  }
+
+  /**
+   * Detects CAD-exported PDFs before the generic table preflight runs.  Metadata is intentionally
+   * used as a high-confidence signal; a plain scanned PDF with no producer information should
+   * continue through the normal OCR quality gates rather than being silently treated as a drawing.
+   */
+  boolean isLikelyEngineeringDrawing(org.apache.pdfbox.pdmodel.PDDocument pdf) {
+    PDDocumentInformation info = pdf.getDocumentInformation();
+    if (info == null) return false;
+    String metadata = String.join(" ",
+        Objects.toString(info.getCreator(), ""),
+        Objects.toString(info.getProducer(), ""),
+        Objects.toString(info.getTitle(), ""),
+        Objects.toString(info.getSubject(), ""),
+        Objects.toString(info.getKeywords(), "")).toLowerCase(Locale.ROOT);
+    return ENGINEERING_DRAWING_METADATA_MARKERS.stream().anyMatch(metadata::contains);
+  }
+
+  /**
+   * Detects a drawing embedded in an otherwise ordinary PDF, such as an exam paper exported by
+   * WPS.  The image gate prevents a text-only instruction page mentioning AutoCAD from being
+   * classified as a drawing.  The wording gate prevents ordinary scanned photos from entering
+   * the CAD page workflow.
+   */
+  boolean looksLikeEngineeringDrawingPage(org.apache.pdfbox.pdmodel.PDPage page, String raw, String local) {
+    if (page == null) return false;
+    int imageCount = 0;
+    boolean largeImage = false;
+    try {
+      var resources = page.getResources();
+      // Valid PDF pages may omit a resources dictionary. Treat them as text-only
+      // pages instead of allowing the CAD heuristic to abort the whole document.
+      if (resources == null) return false;
+      for (var name : resources.getXObjectNames()) {
+        var xObject = resources.getXObject(name);
+        if (xObject instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image) {
+          imageCount++;
+          largeImage |= image.getWidth() >= 800 || image.getHeight() >= 600
+              || (long) image.getWidth() * image.getHeight() >= 450_000L;
+        }
+      }
+    } catch (IOException ignored) {
+      return false;
+    }
+    if (imageCount == 0 || !largeImage) return false;
+    String text = (Objects.toString(raw, "") + "\n" + Objects.toString(local, "")).toLowerCase(Locale.ROOT);
+    int drawingTerms = 0;
+    for (String marker : ENGINEERING_DRAWING_TEXT_MARKERS) if (text.contains(marker.toLowerCase(Locale.ROOT))) drawingTerms++;
+    boolean cadProduct = ENGINEERING_DRAWING_METADATA_MARKERS.stream().anyMatch(text::contains);
+    return drawingTerms >= 2 || (cadProduct && drawingTerms >= 1);
   }
 
   private List<byte[]> splitPage(BufferedImage image) throws IOException {
@@ -893,6 +1022,7 @@ public class DocumentParsingService {
 
   private String extractOffice(Path path, String type) throws IOException {
     if (type == null) return "";
+    if ("text/plain".equals(type) || "text/csv".equals(type)) return Files.readString(path);
     if (type.endsWith("wordprocessingml.document")) {
       try (var doc = new XWPFDocument(Files.newInputStream(path)); var ex = new XWPFWordExtractor(doc)) { return ex.getText(); }
     }
@@ -904,6 +1034,26 @@ public class DocumentParsingService {
     }
     if ("application/vnd.ms-powerpoint".equals(type)) {
       try (var ppt = new HSLFSlideShow(Files.newInputStream(path))) { return slideText(ppt.getSlides()); }
+    }
+    if (type.endsWith("spreadsheetml.sheet") || "application/vnd.ms-excel".equals(type)) {
+      try (var workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(Files.newInputStream(path))) {
+        var formatter = new org.apache.poi.ss.usermodel.DataFormatter();
+        StringBuilder text = new StringBuilder();
+        for (var sheet : workbook) {
+          text.append("# ").append(sheet.getSheetName()).append('\n');
+          for (var row : sheet) {
+            boolean hasValue = false;
+            for (var cell : row) {
+              String value = formatter.formatCellValue(cell).trim();
+              if (!value.isBlank()) hasValue = true;
+              text.append(value).append('\t');
+            }
+            if (hasValue) text.append('\n');
+          }
+          text.append('\n');
+        }
+        return text.toString();
+      }
     }
     return "";
   }
@@ -917,13 +1067,13 @@ public class DocumentParsingService {
   }
 
   private ParsedDocument fromText(UUID id, String status, String text, List<String> warnings,
-      List<ParsedTable> tables, Instant when) {
+      List<ParsedTable> tables, Instant when, double quality) {
     List<Chunk> chunks = new ArrayList<>(chunk(text, 1200, 160)); int next = chunks.size();
     for (ParsedTable table : tables) {
       for (Chunk tableChunk : tableChunks(table, next)) { chunks.add(tableChunk); next++; }
     }
     return new ParsedDocument(id, status, text, List.copyOf(chunks), chapterHeads(text),
-        Math.round(textQuality(text) * 1000d) / 10d, warnings, tables, when);
+        Math.round(quality * 1000d) / 10d, warnings, tables, when);
   }
 
   private void persistChunks(ParsedDocument document, ProgressListener progress) {
@@ -1207,7 +1357,8 @@ public class DocumentParsingService {
     }
   }
 
-  private record Extraction(String text, int unresolvedPages, List<String> warnings, List<ParsedTable> tables) { }
+  private record Extraction(String text, int unresolvedPages, List<String> warnings, List<ParsedTable> tables,
+      String qualityText, int visualOnlyPages) { }
   private record VisionPageResult(String markdown, List<ParsedTable> tables, boolean needsReview) {
     private static final VisionPageResult EMPTY = new VisionPageResult("", List.of(), false);
     private static final VisionPageResult FAILED = new VisionPageResult("", List.of(), true);

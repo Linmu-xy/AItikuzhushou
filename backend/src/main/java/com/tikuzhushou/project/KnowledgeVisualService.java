@@ -3,11 +3,14 @@ package com.tikuzhushou.project;
 import com.tikuzhushou.document.DocumentIntakeService;
 import com.tikuzhushou.document.DocumentParsingService;
 import com.tikuzhushou.document.ObjectStorageService;
+import com.tikuzhushou.cad.CadAnalysisService;
+import com.tikuzhushou.cad.CadMaterialService;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,17 +24,23 @@ public class KnowledgeVisualService {
   private final DocumentParsingService parsing;
   private final ObjectStorageService storage;
   private final JdbcTemplate jdbc;
+  private final CadMaterialService cadMaterials;
+  private final CadAnalysisService cadAnalysis;
 
   public KnowledgeVisualService(ExamProjectService projects, DocumentIntakeService documents,
-      DocumentParsingService parsing, ObjectStorageService storage, JdbcTemplate jdbc) {
+      DocumentParsingService parsing, ObjectStorageService storage, JdbcTemplate jdbc,
+      CadMaterialService cadMaterials, CadAnalysisService cadAnalysis) {
     this.projects = projects;
     this.documents = documents;
     this.parsing = parsing;
     this.storage = storage;
     this.jdbc = jdbc;
+    this.cadMaterials = cadMaterials;
+    this.cadAnalysis = cadAnalysis;
   }
 
   public int pageCount(UUID documentId) {
+    if (isCadMaterial(documentId)) return cadAnalysis.drawingPageCount(documentId);
     DocumentIntakeService.DocumentReceipt source = documents.get(documentId);
     if (source.mediaType().startsWith("image/")) return 1;
     if (!"application/pdf".equals(source.mediaType())) return 0;
@@ -43,13 +52,19 @@ public class KnowledgeVisualService {
   public byte[] page(UUID projectId, UUID documentId, int page, int x, int y, int width, int height) {
     ExamProjectService.ProjectView project = projects.get(projectId);
     if (project.sources().stream().noneMatch(source -> source.enabled()
-        && "DOCUMENT".equals(source.sourceType()) && documentId.equals(source.sourceId()))) {
+        && Set.of("DOCUMENT", "CAD_MATERIAL").contains(source.sourceType()) && documentId.equals(source.sourceId()))) {
       throw new IllegalArgumentException("图像不属于当前项目的已选资料");
     }
     return page(documentId, page, x, y, width, height);
   }
 
   public byte[] page(UUID documentId, int page, int x, int y, int width, int height) {
+    if (isCadMaterial(documentId)) {
+      byte[] original;
+      try { original = cadAnalysis.drawingPageBytes(documentId, page); }
+      catch (Exception error) { throw new IllegalStateException("CAD 工程图原图读取失败", error); }
+      return crop(original, page, x, y, width, height);
+    }
     DocumentIntakeService.DocumentReceipt source = documents.get(documentId);
     if (page < 1 || page > pageCount(documentId)) throw new IllegalArgumentException("原图页码超出范围");
     byte[] original;
@@ -71,6 +86,11 @@ public class KnowledgeVisualService {
       throw new IllegalArgumentException("该资料没有可直接查看的原图");
     }
     if (x == 0 && y == 0 && width == 100 && height == 100 && "application/pdf".equals(source.mediaType())) return original;
+    return crop(original, page, x, y, width, height);
+  }
+
+  private byte[] crop(byte[] original, int page, int x, int y, int width, int height) {
+    if (x == 0 && y == 0 && width == 100 && height == 100) return original;
     try {
       BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(original));
       if (image == null) throw new IllegalArgumentException("图片格式无法读取");
@@ -87,8 +107,13 @@ public class KnowledgeVisualService {
         return output.toByteArray();
       }
     } catch (Exception error) {
-      throw new IllegalStateException("原图裁切失败", error);
+      throw new IllegalStateException("第" + page + "页原图裁切失败", error);
     }
+  }
+
+  private boolean isCadMaterial(UUID id) {
+    try { cadMaterials.get(id); return true; }
+    catch (IllegalArgumentException ignored) { return false; }
   }
 
   public List<Integer> pages(UUID documentId) {

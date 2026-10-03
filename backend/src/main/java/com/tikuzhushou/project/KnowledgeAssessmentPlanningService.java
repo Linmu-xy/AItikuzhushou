@@ -53,17 +53,25 @@ public class KnowledgeAssessmentPlanningService {
     StringBuilder index = new StringBuilder();
     int visualSurveys = 0;
     for (Map<String, Object> source : snapshot.sources()) {
-      if (!"DOCUMENT".equals(source.get("sourceType"))) continue;
+      if (!Set.of("DOCUMENT", "CAD_MATERIAL").contains(source.get("sourceType"))) continue;
       UUID id = UUID.fromString(String.valueOf(source.get("sourceId")));
       documents.put(id, source);
       index.append("\n资料 ").append(id).append("｜").append(source.get("name"))
           .append("｜用途 ").append(source.get("sourceRole")).append('\n');
-      List<Map<String, Object>> pages = jdbc.query(
-          "select page_no,markdown from document_pages where document_id=? and active=true order by page_no",
-          (rs, row) -> Map.of("page", rs.getInt(1), "text", Objects.toString(rs.getString(2), "")), id);
-      if (pages.isEmpty()) pages = jdbc.query(
-          "select chunk_index,content from document_chunks where document_id=? order by chunk_index",
-          (rs, row) -> Map.of("page", rs.getInt(1) + 1, "text", Objects.toString(rs.getString(2), "")), id);
+      List<Map<String, Object>> pages;
+      if ("DOCUMENT".equals(source.get("sourceType"))) {
+        pages = jdbc.query(
+            "select page_no,markdown from document_pages where document_id=? and active=true order by page_no",
+            (rs, row) -> Map.of("page", rs.getInt(1), "text", Objects.toString(rs.getString(2), "")), id);
+        if (pages.isEmpty()) pages = jdbc.query(
+            "select chunk_index,content from document_chunks where document_id=? order by chunk_index",
+            (rs, row) -> Map.of("page", rs.getInt(1) + 1, "text", Objects.toString(rs.getString(2), "")), id);
+      } else {
+        int pageCount = visuals.pageCount(id);
+        pages = java.util.stream.IntStream.rangeClosed(1, pageCount)
+            .mapToObj(page -> Map.<String, Object>of("page", page, "text", "CAD 工程图原图页面；结构化尺寸、标注和视图关系可能未完全提取。"))
+            .toList();
+      }
       if (pages.isEmpty() && visuals.pageCount(id) == 1) {
         String visual = visualFindings.computeIfAbsent(id + ":1", ignored -> visionSurvey(project.ownerId(), id, 1));
         index.append("第1页图片：").append(visual).append('\n');
@@ -85,7 +93,7 @@ public class KnowledgeAssessmentPlanningService {
         }
       }
     }
-    if (documents.isEmpty()) throw new IllegalArgumentException("知识库项目缺少可命题的文档");
+    if (documents.isEmpty()) throw new IllegalArgumentException("项目缺少可用于规划的正文或原图资料");
     String corpus = condense(project.ownerId(), index.toString());
     if (knowledgePoints != null && project.knowledgeBaseId() != null) {
       String confirmed = knowledgePoints.confirmedContext(project.knowledgeBaseId());

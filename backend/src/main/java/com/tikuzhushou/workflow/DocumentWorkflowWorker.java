@@ -82,7 +82,7 @@ public class DocumentWorkflowWorker {
           tasks.update(taskId, "RUNNING", stage, progress, processed, total, message, null, null);
         });
         if (tasks.cancelled(taskId)) throw new TaskCancelledException();
-        if (!"PARSED".equals(result.status())) {
+        if (!"PARSED".equals(result.status()) && !"PARSED_PARTIAL".equals(result.status())) {
           tasks.update(taskId, "FAILED", "QUALITY_REJECTED", 100, result.chunks().size(), result.chunks().size(),
               "OCR/解析质量未达到进入职业标准抽取的要求", "QUALITY_REJECTED",
               String.join("；", result.warnings()));
@@ -90,8 +90,11 @@ public class DocumentWorkflowWorker {
               taskId, task.resourceId(), result.chunks().size(), result.warnings());
           return;
         }
+        String completionMessage = "PARSED_PARTIAL".equals(result.status())
+            ? "文档可解析内容已完成，未可靠识别页面已保留原页截图，请人工核验"
+            : "文档解析、分块和向量化完成";
         tasks.update(taskId, "SUCCEEDED", "SUCCEEDED", 100, result.chunks().size(), result.chunks().size(),
-            "文档解析、分块和向量化完成", null, null);
+            completionMessage, null, null);
         log.info("document parse succeeded task={} documentId={} chunks={}",
             taskId, task.resourceId(), result.chunks().size());
       } catch (TaskCancelledException cancelled) {

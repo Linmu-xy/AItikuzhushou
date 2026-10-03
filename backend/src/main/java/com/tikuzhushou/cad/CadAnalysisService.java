@@ -106,9 +106,15 @@ public class CadAnalysisService {
       String console = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
       if (!finished) {
         process.destroyForcibly();
+        Map<String, Object> fallback = tryDrawingFallback(job, material, input, runRoot,
+            "CAD_WORKER_TIMEOUT", "结构化解析超时");
+        if (fallback != null) return fallback;
         return fail(job, "CAD_WORKER_TIMEOUT", "CAD Worker 超时，已终止解析进程");
       }
       if (!Files.exists(output)) {
+        Map<String, Object> fallback = tryDrawingFallback(job, material, input, runRoot,
+            "CAD_WORKER_NO_RESULT", "结构化解析未生成结果");
+        if (fallback != null) return fallback;
         return fail(job, "CAD_WORKER_NO_RESULT", limit("CAD Worker 未生成分析结果。" + console, 2000));
       }
       Map<String, Object> result = json.readValue(Files.readString(output), new TypeReference<>() { });
@@ -152,6 +158,9 @@ public class CadAnalysisService {
       response.put("warnings", result.getOrDefault("warnings", List.of()));
       return response;
     } catch (Exception error) {
+      Map<String, Object> fallback = tryDrawingFallback(job, material, input, runRoot,
+          "CAD_WORKER_FAILED", rootMessage(error));
+      if (fallback != null) return fallback;
       return fail(job, "CAD_WORKER_FAILED", rootMessage(error));
     } finally {
       try { storage.cleanupMaterialized(input); } catch (Exception ignored) { }
@@ -170,7 +179,7 @@ public class CadAnalysisService {
     CadMaterialService.Material material = materials.get(materialId);
     List<AnalysisJob> jobs = jdbc.query("select id,material_id,workflow_task_id,parser,status,result_json,analysis_storage_key,preview_storage_key,error_code,error_message,created_at,updated_at from cad_analysis_jobs where material_id=? order by created_at desc",
         (rs, row) -> mapJob(rs), material.id());
-    if (jobs.isEmpty()) return new AnalysisView(material, null, List.of(), List.of(), List.of());
+    if (jobs.isEmpty()) return new AnalysisView(material, null, List.of(), List.of(), List.of(), List.of());
     AnalysisJob job = jobs.getFirst();
     List<Fact> facts = jdbc.query("select id,material_id,analysis_job_id,fact_name,value_json,unit,source_ref,confidence,verified,usable_for_generation,verification_note,verified_by,verified_at,created_at from cad_facts where analysis_job_id=? order by created_at,id",
         (rs, row) -> mapFact(rs), job.id());
@@ -178,7 +187,7 @@ public class CadAnalysisService {
         (rs, row) -> mapAnnotation(rs), job.id());
     List<PreviewAsset> previewAssets = jdbc.query("select id,material_id,analysis_job_id,asset_type,page_number,media_type,storage_key,size_bytes,created_at from cad_preview_assets where analysis_job_id=? order by page_number,id",
         (rs, row) -> mapPreviewAsset(rs), job.id());
-    return new AnalysisView(material, job, facts, annotations, previewAssets);
+    return new AnalysisView(material, job, facts, annotations, previewAssets, resultWarnings(job.resultJson()));
   }
 
   public Fact verifyFact(UUID factId, boolean verified, boolean usableForGeneration, String note) {
@@ -214,6 +223,22 @@ public class CadAnalysisService {
     return storage.materialize(keys.getFirst(), ".png");
   }
 
+  public int drawingPageCount(UUID materialId) {
+    materials.get(materialId);
+    Integer count = jdbc.queryForObject("select count(*) from cad_preview_assets where material_id=? and asset_type='DRAWING_PAGE'",
+        Integer.class, materialId);
+    return count == null ? 0 : count;
+  }
+
+  public byte[] drawingPageBytes(UUID materialId, int page) throws Exception {
+    Path path = materializeDrawingPage(materialId, page);
+    try {
+      return Files.readAllBytes(path);
+    } finally {
+      storage.cleanupMaterialized(path);
+    }
+  }
+
   private List<Map<String, Object>> renderDrawingPages(UUID materialId, UUID analysisJobId, Path input, Path runRoot) throws Exception {
     List<Map<String, Object>> pages = new ArrayList<>();
     try (var document = Loader.loadPDF(input.toFile())) {
@@ -237,6 +262,55 @@ public class CadAnalysisService {
       }
     }
     return pages;
+  }
+
+  /**
+   * A PDF drawing is still usable when the CAD/text worker cannot build structured facts.
+   * Keep its rendered pages as the authoritative visual evidence instead of turning the
+   * whole material into a hard failure.
+   */
+  private Map<String, Object> tryDrawingFallback(AnalysisJob job, CadMaterialService.Material material,
+      Path input, Path runRoot, String code, String reason) {
+    if (!"PDF".equalsIgnoreCase(material.format()) || input == null || !Files.isRegularFile(input)) return null;
+    // If the worker already produced analysis.json, an error after that point is a
+    // persistence/storage failure and must remain a real failure rather than being
+    // relabeled as a visual fallback.
+    if (Files.exists(runRoot.resolve("analysis.json"))) return null;
+    try {
+      List<Map<String, Object>> pages = renderDrawingPages(material.id(), job.id(), input, runRoot);
+      if (pages.isEmpty()) return null;
+      String safeReason = limit(Objects.requireNonNullElse(reason, "结构化解析未完成"), 600);
+      Map<String, Object> result = new LinkedHashMap<>();
+      result.put("schemaVersion", "cad-fact.v1");
+      result.put("generatedAt", Instant.now().toString());
+      result.put("parser", "pdf-page-fallback");
+      result.put("status", "PARSED_PARTIAL");
+      result.put("facts", List.of());
+      result.put("annotations", List.of());
+      result.put("drawingPages", pages);
+      result.put("warnings", List.of(
+          "工程图结构化解析未完成（" + code + "）：" + safeReason + "；未提取尺寸、标注和视图关系。",
+          "已保留原 PDF 高清页面，可继续作为随题原图使用；图中具体数值和位置必须人工核验。"));
+      byte[] analysisBytes = json.writeValueAsBytes(result);
+      String analysisStored = storage.put("cad_analysis_" + job.id() + ".json",
+          new ByteArrayInputStream(analysisBytes), analysisBytes.length, "application/json");
+      jdbc.update("update cad_analysis_jobs set parser=?,status='PARSED_PARTIAL',result_json=?,analysis_storage_key=?,preview_storage_key=null,error_code=null,error_message=null,updated_at=? where id=?",
+          "pdf-page-fallback", json.writeValueAsString(result), analysisStored, Timestamp.from(Instant.now()), job.id());
+      materials.updateStatus(material.id(), "ANALYSIS_PARTIAL");
+      touchExamProjects(material.id());
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("analysisJobId", job.id());
+      response.put("status", "PARSED_PARTIAL");
+      response.put("parser", "pdf-page-fallback");
+      response.put("previewAvailable", false);
+      response.put("facts", List.of());
+      response.put("annotations", List.of());
+      response.put("drawingPages", pages);
+      response.put("warnings", result.get("warnings"));
+      return response;
+    } catch (Exception ignored) {
+      return null;
+    }
   }
 
   private void addWarning(Map<String, Object> result, String warning) {
@@ -293,10 +367,21 @@ public class CadAnalysisService {
   private String statusToMaterial(String status) {
     return switch (status) {
       case "PARSED" -> "ANALYZED";
-      case "PARSED_PARTIAL" -> "ANALYSIS_PARTIAL";
-      case "ADAPTER_REQUIRED" -> "ADAPTER_REQUIRED";
+      case "PARSED_PARTIAL", "ADAPTER_REQUIRED", "UNSUPPORTED" -> "ANALYSIS_PARTIAL";
       default -> "ANALYSIS_FAILED";
     };
+  }
+
+  private List<String> resultWarnings(String resultJson) {
+    if (resultJson == null || resultJson.isBlank()) return List.of();
+    try {
+      Map<String, Object> result = json.readValue(resultJson, new TypeReference<>() { });
+      Object warnings = result.get("warnings");
+      if (!(warnings instanceof List<?> values)) return List.of();
+      return values.stream().filter(Objects::nonNull).map(String::valueOf).filter(value -> !value.isBlank()).toList();
+    } catch (Exception ignored) {
+      return List.of();
+    }
   }
 
   private void cleanupRunRoot(Path root) {
@@ -359,5 +444,5 @@ public class CadAnalysisService {
   public record PreviewAsset(UUID id, UUID materialId, UUID analysisJobId, String assetType, Integer pageNumber,
       String mediaType, long sizeBytes, Instant createdAt) { }
   public record AnalysisView(CadMaterialService.Material material, AnalysisJob job, List<Fact> facts,
-      List<Annotation> annotations, List<PreviewAsset> previewAssets) { }
+      List<Annotation> annotations, List<PreviewAsset> previewAssets, List<String> warnings) { }
 }

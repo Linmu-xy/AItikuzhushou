@@ -147,9 +147,11 @@ public class ExamProjectEvidenceService {
         snapshot.put("analysisStatus", cad.analysisStatus());
         snapshot.put("usableFactCount", cad.factCount());
         snapshot.put("usableAnnotationCount", cad.annotationCount());
+        snapshot.put("visualPageCount", cad.visualPageCount());
+        snapshot.put("visualOnly", cad.visualPageCount() > 0 && cad.factCount() + cad.annotationCount() == 0);
         if (!ANALYZED_CAD_STATUS.contains(cad.materialStatus()) || !ANALYSIS_READY_STATUS.contains(cad.analysisStatus())) {
           blockers.add("模型或工程图尚未完成读取：" + cad.name());
-        } else if (cad.factCount() + cad.annotationCount() == 0) {
+        } else if (cad.factCount() + cad.annotationCount() == 0 && cad.visualPageCount() == 0) {
           blockers.add("模型或工程图没有已确认的可出题事实：" + cad.name());
         }
         facts.addAll(cad.facts());
@@ -201,7 +203,10 @@ public class ExamProjectEvidenceService {
     List<Map<String, Object>> annotations = jdbc.query("select id,annotation_kind,value_json,source_ref,confidence,verified_at from cad_annotations where material_id=? and analysis_job_id=? and verified=true and usable_for_generation=true order by page_number,id",
         (rs, index) -> fact(rs.getObject("id", UUID.class), row.id(), "ANNOTATION", rs.getString("annotation_kind"), rs.getString("value_json"), "", rs.getString("source_ref"), rs.getDouble("confidence"), rs.getTimestamp("verified_at")), id, row.analysisId());
     List<Map<String, Object>> all = new ArrayList<>(facts); all.addAll(annotations);
-    return new CadEvidence(row.id(), row.name(), row.materialStatus(), row.analysisStatus(), all.size(), annotations.size(), all);
+    Integer visualPages = jdbc.queryForObject("select count(*) from cad_preview_assets where material_id=? and analysis_job_id=? and asset_type='DRAWING_PAGE'",
+        Integer.class, id, row.analysisId());
+    return new CadEvidence(row.id(), row.name(), row.materialStatus(), row.analysisStatus(), all.size(), annotations.size(),
+        visualPages == null ? 0 : visualPages, all);
   }
 
   private Map<String, Object> fact(UUID factId, UUID materialId, String kind, String name, String valueJson,
@@ -253,7 +258,8 @@ public class ExamProjectEvidenceService {
   private record Validation(List<String> blockers, List<Map<String, Object>> sources, List<Map<String, Object>> facts, Map<String, Object> profiles) { }
   private record DocumentEvidence(UUID id, String name, String status, String hash, int chunkCount, Map<String, Object> profile, int confirmedStandardCount) { }
   private record CadRow(UUID id, String name, String materialStatus, String analysisStatus, UUID analysisId) { }
-  private record CadEvidence(UUID id, String name, String materialStatus, String analysisStatus, int factCount, int annotationCount, List<Map<String, Object>> facts) { }
+  private record CadEvidence(UUID id, String name, String materialStatus, String analysisStatus, int factCount,
+      int annotationCount, int visualPageCount, List<Map<String, Object>> facts) { }
   public record PreparationView(UUID snapshotId, UUID projectId, int version, String status, List<String> blockers,
       List<Map<String, Object>> sources, int factCount, Map<String, Object> profiles, String snapshotHash, Instant createdAt) { }
 }

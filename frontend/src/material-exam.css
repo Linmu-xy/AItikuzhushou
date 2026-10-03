@@ -43,7 +43,8 @@
 .material-head-actions a.button:hover { border-color: var(--cal-brand); color: var(--cal-brand-deep); background: var(--cal-brand-soft); }
 .material-head-actions a { text-decoration: none; }
 .material-status { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border-radius: 999px; color: var(--cal-brand-deep); background: var(--cal-brand-soft); font-size: .75rem; font-weight: 700; white-space: nowrap; }
-.material-status.analysis_failed, .material-status.adapter_required { color: var(--cal-danger); background: var(--cal-danger-soft); }
+.material-status.analysis_failed { color: var(--cal-danger); background: var(--cal-danger-soft); }
+.material-status.analysis_partial { color: #805f20; background: var(--cal-signal-soft); }
 .material-status.analyzing { color: #805f20; background: var(--cal-signal-soft); }
 .material-task-strip { display: grid; grid-template-columns: max-content minmax(90px, 1fr) max-content; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--cal-line); border-radius: 9px; background: var(--cal-surface); }
 .material-task-strip b, .material-task-strip span { display: block; }
@@ -52,6 +53,10 @@
 .material-task-progress { height: 5px; overflow: hidden; border-radius: 999px; background: var(--cal-line); }
 .material-task-progress i { display: block; height: 100%; border-radius: inherit; background: var(--cal-brand); transition: width .25s ease; }
 .material-task-strip > small { grid-column: 1 / -1; color: var(--cal-danger); }
+.material-analysis-notice { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid #ead39a; border-radius: 9px; color: #6e531b; background: #fff9e7; }
+.material-analysis-notice div { display: grid; gap: 3px; }
+.material-analysis-notice span, .material-analysis-notice small { color: #806b3a; font-size: .78rem; }
+.material-analysis-notice ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; font-size: .8rem; }
 .material-preview-panel { min-width: 0; padding: 16px; }
 .obj-preview, .obj-preview-loading { position: relative; min-height: 390px; overflow: hidden; border: 1px solid var(--cal-line); border-radius: 9px; background: #eef3f1; }
 .obj-preview-canvas { display: block; width: 100%; height: 390px; cursor: grab; }

@@ -89,6 +89,12 @@ async function requestBlob(path: string, auth: string) {
 function formatBytes(value = 0) { return value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.ceil(value / 1024))} KB`; }
 function modeName(mode: Mode) { return modeOptions.find(item => item.id === mode)?.name || mode; }
 function difficultyName(value: VariantItem['difficulty']) { return value === 'EASY' ? '简单' : value === 'MEDIUM' ? '中等' : '困难'; }
+function sourceStatusName(value: string) {
+  return ({
+    UPLOADED: '待分析', ANALYZING: '分析中', ANALYZED: '已分析', ANALYSIS_PARTIAL: '部分可用',
+    ANALYSIS_FAILED: '分析失败', PARSED: '已解析', PARSED_PARTIAL: '部分可用', FAILED: '分析失败',
+  } as Record<string, string>)[value] || value;
+}
 function runStatusName(value: GenerationRun['status']) { return value === 'QUEUED' ? '排队中' : value === 'RUNNING' ? 'AI 生成中' : value === 'REVIEW_REQUIRED' ? '待人工审核' : value === 'REVIEW_PENDING' ? '等待审题服务' : value === 'PARTIAL' ? '部分完成' : value === 'FAILED' ? '生成失败' : '已取消'; }
 function itemStatusName(value: string) { return value === 'REVIEW_REQUIRED' ? '待审核' : value === 'REVIEW_PENDING' ? '等待审题' : value === 'REJECTED' ? '质量未通过' : value === 'APPROVED' ? '已通过' : value; }
 function exportStatusName(value: ProjectExportRun['status']) { return value === 'QUEUED' ? '排队中' : value === 'RUNNING' ? '正在打包' : value === 'DOWNLOAD_READY' ? '可下载' : value === 'FAILED' ? '导出失败' : '已取消'; }
@@ -380,7 +386,7 @@ export function ProjectSetupWorkspace({ auth, projectId, initialMode, initialSee
     const key = `${type}:${id}`;
     const checked = key in selectedSources;
     const unavailable = type === 'DOCUMENT' && ((mode === 'KNOWLEDGE_BASE' && !['PARSED', 'PARSED_PARTIAL'].includes(status)) || (mode === 'CAREER' && (status !== 'PARSED' || (initialSourceId ? id !== initialSourceId : !checked))));
-    return <article className={`setup-source ${checked ? 'selected' : ''}`} key={key}><label className="setup-source-check"><input type="checkbox" checked={checked} disabled={unavailable && !checked} onChange={event => toggleSource(type, id, event.target.checked)} /><span><b>{nameValue}</b><small>{meta} · {unavailable ? '不可选' : status}</small></span></label>{checked && !['KNOWLEDGE_BASE', 'CAREER'].includes(mode) && <select aria-label={`${nameValue}资料角色`} value={selectedSources[key]} onChange={event => changeSourceRole(type, id, event.target.value)}>{roleOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}</article>;
+    return <article className={`setup-source ${checked ? 'selected' : ''}`} key={key}><label className="setup-source-check"><input type="checkbox" checked={checked} disabled={unavailable && !checked} onChange={event => toggleSource(type, id, event.target.checked)} /><span><b>{nameValue}</b><small>{meta} · {unavailable ? '不可选' : sourceStatusName(status)}</small></span></label>{checked && !['KNOWLEDGE_BASE', 'CAREER'].includes(mode) && <select aria-label={`${nameValue}资料角色`} value={selectedSources[key]} onChange={event => changeSourceRole(type, id, event.target.value)}>{roleOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}</article>;
   };
 
   return <div className={`project-setup ${['KNOWLEDGE_BASE', 'CAREER'].includes(mode) ? 'knowledge-project' : ''} ${customSettings ? 'custom-settings' : 'simple-settings'}`} data-step={step}>
