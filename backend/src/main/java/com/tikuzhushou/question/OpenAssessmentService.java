@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -180,11 +181,11 @@ public class OpenAssessmentService {
           不接受“默认某截面”“按常规理解”“建议补充但不影响”作为闭合依据。证据不能摘自作者答案或自行补写。
           关键条件缺失、与得分有关的对象/基准切换、尺寸矛盾须NEEDS_CHANGE，不能靠宽松评分掩盖。
           开放题不要求唯一方案，但合理替代方案须能按现有评分公平得分。检查不同题的条件是否被错误继承。
-          只输出 {"action":"FINAL","status":"PASS或REWRITE",
-          "checks":{"correctness":"PASS或FAIL","answerability":"PASS或FAIL",
-          "alignment":"PASS或FAIL","rubric":"PASS或FAIL","diversity":"PASS或FAIL",
-          "criticalFacts":"PASS或FAIL","independentAgreement":"PASS或FAIL"},
-          "optionChecks":{},
+           只输出 {"action":"FINAL","status":"PASS或REWRITE",
+           "checks":{"correctness":"PASS或FAIL","answerability":"PASS或FAIL",
+           "alignment":"PASS或FAIL","rubric":"PASS或FAIL","diversity":"PASS或FAIL",
+           "criticalFacts":"PASS或FAIL","independentAgreement":"PASS或FAIL"},
+           "optionChecks":{"A":"PASS","B":"PASS","C":"PASS","D":"PASS"},
           "discriminationScore":0,"outsiderSolvableScore":0,"flags":[],
           "surfaceShortcut":false,"shortcutReason":"无需学科知识能否破解，以及原因",
           "counterexampleCheck":{"alternative":"最强合理替代方案或未找到的理由",
@@ -192,18 +193,24 @@ public class OpenAssessmentService {
           "issueResolutions":[{"id":"A1","status":"NEEDS_CHANGE","reason":"影响什么答案/评分",
           "stemEvidence":["题干原句"],"rubricEvidence":["评分原句"]}],
           "feedback":"发现的实质缺陷及可执行修订建议；无缺陷留空"}。
-          只有选择题才填写optionChecks的A/B/C/D检查，其余题返回空对象。
+           SINGLE_CHOICE 或 MULTIPLE_CHOICE 必须填写完整的 optionChecks.A、B、C、D，值只能是 PASS 或 FAIL；
+           其他题型才返回空对象。即使 status=REWRITE，也不能省略选择题的四项检查。
           flags只放题目本身的阻断性缺陷，建议或盲解自身的错误写feedback；PASS时所有checks须PASS且flags为空。
           REWRITE须有具体失败检查或NEEDS_CHANGE，并给可执行修改意见；不要因自己的响应格式/证据摘录失败要求重写题目。
           分数只是专家估计，不代表实测区分度，不以凑到某个分数替代以上实质检查。
           INPUT:
           """ + write(judgeInput), pictures, judgeResearch);
+      String protocolIssue = reviewProtocolIssue(question, judgment);
+      if (!protocolIssue.isBlank()) {
+        judgment = recoverReviewProtocol(question, judgment, pictures, judgeResearch, protocolIssue);
+      }
       question.put("_assessmentJudgment", judgment);
       return AssessmentReviewGate.evaluate(question, solution, judgment);
     } catch (RuntimeException error) {
       log.warn("assessment review did not complete: sequence={}, error={}", sequence, error.getClass().getSimpleName());
+      String errorCode = error instanceof SemanticOutputException ? "REVIEW_PROTOCOL_ERROR" : "REVIEW_PROVIDER_ERROR";
       return new QuestionProfessionalReviewService.Review(sequence, false, 0, 0,
-          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), safeError(error), List.of(), false);
+          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), reviewError(error), List.of(), false, errorCode);
     } finally {
       question.put("_assessmentSolveResearch", List.copyOf(solveResearch));
       question.put("_assessmentJudgeResearch", List.copyOf(judgeResearch));
@@ -291,6 +298,55 @@ public class OpenAssessmentService {
       research.add(search(question, text(response.get("query")), stage, enabled));
     }
     throw new IllegalStateException("命题工具循环未结束");
+  }
+
+  private Map<String, Object> recoverReviewProtocol(Map<String, Object> question, Map<String, Object> previous,
+      List<byte[]> images, List<Map<String, Object>> research, String issue) {
+    String prompt = """
+        上一次审题已经完成判断，但返回的 JSON 缺少必需结构字段：%s
+        现在只补齐缺失字段，不改变已有的 status、checks、flags、feedback、答案判断或质量结论。
+        只输出完整合法 JSON，不要搜索、不要解释过程，格式必须为：
+        {"action":"FINAL","status":"PASS或REWRITE",
+        "checks":{"correctness":"PASS或FAIL","answerability":"PASS或FAIL","alignment":"PASS或FAIL","rubric":"PASS或FAIL","diversity":"PASS或FAIL","criticalFacts":"PASS或FAIL","independentAgreement":"PASS或FAIL"},
+        "optionChecks":{"A":"PASS或FAIL","B":"PASS或FAIL","C":"PASS或FAIL","D":"PASS或FAIL"},
+        "discriminationScore":0,"outsiderSolvableScore":0,"flags":[],"surfaceShortcut":false,
+        "counterexampleCheck":{"alternative":"","valid":false,"excludedByRubric":false},"issueResolutions":[],"feedback":""}
+        选择题必须返回完整 A、B、C、D；非选择题返回空 optionChecks。当前题目：
+        %s
+        上一次响应：
+        %s
+        """.formatted(issue, write(learnerView(question)), write(previous));
+    String raw = call(question, "JUDGE", "你是测评审查协议修复器。只补齐 JSON 字段，不改变审题结论。",
+        TOOL_PROTOCOL + "\n" + prompt, images, new CallPolicy("none", 5_000),
+        "ASSESSMENT_V2_JUDGE_PROTOCOL_RECOVERY", true);
+    Map<String, Object> recovered = read(raw);
+    if (text(recovered.get("action")).isBlank() && recovered.containsKey("checks")) recovered.put("action", "FINAL");
+    if (!"FINAL".equals(recovered.get("action"))) throw new SemanticOutputException("协议恢复未返回 FINAL 结果");
+    String remaining = reviewProtocolIssue(question, recovered);
+    if (!remaining.isBlank()) throw new SemanticOutputException("协议恢复后仍缺少：" + remaining);
+    research.add(toolResult("REVIEW_PROTOCOL_RECOVERED", issue, "JUDGE"));
+    return recovered;
+  }
+
+  private String reviewProtocolIssue(Map<String, Object> question, Map<String, Object> judgment) {
+    List<String> missing = new ArrayList<>();
+    Map<String, Object> checks = map(judgment.get("checks"));
+    for (String key : List.of("correctness", "answerability", "alignment", "rubric", "diversity", "criticalFacts", "independentAgreement"))
+      if (!("PASS".equals(checks.get(key)) || "FAIL".equals(checks.get(key)))) missing.add("checks." + key);
+    String status = text(judgment.get("status"));
+    if (!("PASS".equals(status) || "REWRITE".equals(status))) missing.add("status");
+    if (!(judgment.get("flags") instanceof List<?>)) missing.add("flags");
+    if (!(judgment.get("surfaceShortcut") instanceof Boolean)) missing.add("surfaceShortcut");
+    Map<String, Object> counterexample = map(judgment.get("counterexampleCheck"));
+    if (!(counterexample.get("valid") instanceof Boolean)
+        || !(counterexample.get("excludedByRubric") instanceof Boolean)
+        || text(counterexample.get("alternative")).isBlank()) missing.add("counterexampleCheck");
+    if (Set.of("SINGLE_CHOICE", "MULTIPLE_CHOICE").contains(text(question.get("type")))) {
+      Map<String, Object> options = map(judgment.get("optionChecks"));
+      for (String option : List.of("A", "B", "C", "D"))
+        if (!("PASS".equals(options.get(option)) || "FAIL".equals(options.get(option)))) missing.add("optionChecks." + option);
+    }
+    return String.join(", ", missing);
   }
 
   record CallPolicy(String effort, int maxTokens) { }
@@ -428,6 +484,15 @@ public class OpenAssessmentService {
   private static String safeError(RuntimeException error) {
     // Provider errors can contain request bodies/URLs; don't persist credentials or full prompts.
     return "开放命题阶段未完成（" + error.getClass().getSimpleName() + "），请检查服务日志后重试审核";
+  }
+  private static String reviewError(RuntimeException error) {
+    if (error instanceof SemanticOutputException) {
+      return "AI 返回的审题结构不完整：" + compact(error.getMessage(), 260) + "。请重新审题。";
+    }
+    if (error instanceof ModelResponseException response) {
+      return "AI 审题服务未返回完整结果（" + response.reason().name() + "），请稍后重试。";
+    }
+    return safeError(error);
   }
   private static Map<String, Object> map(Object value) {
     Map<String, Object> result = new LinkedHashMap<>();

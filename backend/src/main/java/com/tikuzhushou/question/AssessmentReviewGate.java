@@ -89,7 +89,8 @@ final class AssessmentReviewGate {
         + "；检查项：" + String.join(",", flags);
     return new QuestionProfessionalReviewService.Review(number(question.get("sequence")), passed,
         score(judgment.get("discriminationScore")), score(judgment.get("outsiderSolvableScore")),
-        List.copyOf(flags), feedback.trim(), List.copyOf(options), available);
+        List.copyOf(flags), feedback.trim(), List.copyOf(options), available,
+        available ? null : "REVIEW_PROTOCOL_ERROR");
   }
 
   private static String canonicalAnswer(Object value) {

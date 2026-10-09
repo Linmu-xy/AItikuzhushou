@@ -46,10 +46,10 @@ public class ExamProjectQuestionReviewService {
       throw new IllegalStateException("题目已被其他操作更新，请刷新后再审核");
     }
     String decision = normalizeDecision(request.decision());
-    if (Set.of("PLANNED", "GENERATING", "REVIEW_PENDING", "FAILED").contains(current.status())) {
+    if (Set.of("PLANNED", "GENERATING", "REVIEW_PENDING", "FAILED", "REMOVED").contains(current.status())) {
       throw new IllegalArgumentException("当前题目尚未进入人工审核状态");
     }
-    if ("REOPEN".equals(decision) && !"APPROVED".equals(current.status())) {
+    if ("REOPEN".equals(decision) && !Set.of("APPROVED", "APPROVED_WITH_RISK").contains(current.status())) {
       throw new IllegalArgumentException("只有已通过的题目可以重新打开审核");
     }
     if ("APPROVE".equals(decision) && current.question().isEmpty() && isEmpty(request.question())) {
@@ -58,7 +58,7 @@ public class ExamProjectQuestionReviewService {
     if ("REJECT".equals(decision) && clean(request.comment()).isBlank()) {
       throw new IllegalArgumentException("驳回题目时必须填写原因");
     }
-    if ("APPROVED".equals(current.status()) && !"REOPEN".equals(decision)) {
+    if (Set.of("APPROVED", "APPROVED_WITH_RISK").contains(current.status()) && !"REOPEN".equals(decision)) {
       throw new IllegalArgumentException("题目已通过，请先重新打开审核再编辑或驳回");
     }
 
@@ -90,6 +90,43 @@ public class ExamProjectQuestionReviewService {
     return view(load(projectId, runId, itemId));
   }
 
+  /**
+   * Records an explicit teacher decision to keep a failed/rejected original question.
+   * This is intentionally separate from normal review so the risk acceptance is visible
+   * in the item status, task center and exported approval records.
+   */
+  @Transactional
+  public ReviewItem keepOriginal(UUID projectId, UUID runId, UUID itemId, String comment) {
+    ItemState current = load(projectId, runId, itemId);
+    if (!Set.of("FAILED", "REJECTED").contains(current.status())) {
+      throw new IllegalArgumentException("只有生成失败或质量未通过的题目可以保留原题");
+    }
+    if (current.reviewerId() != null || current.questionVersion() != 1) {
+      throw new IllegalArgumentException("题目已被人工修改或审核，不能直接保留原题");
+    }
+    if (current.question().isEmpty()) {
+      throw new IllegalArgumentException("题目内容为空，不能保留原题");
+    }
+    ensureHistory(current);
+    UUID actor = access.currentUserId();
+    String note = clean(comment);
+    if (note.isBlank()) note = "人工确认保留原题，接受 AI/质量风险";
+    Instant now = Instant.now();
+    int changed = jdbc.update("update exam_project_generation_items set status='APPROVED_WITH_RISK',reviewer_id=?,review_comment=?,reviewed_at=?,updated_at=?,error_code='HUMAN_ACCEPTED_RISK' where id=? and run_id=? and status in ('FAILED','REJECTED') and question_version=1 and reviewer_id is null",
+        actor, note, Timestamp.from(now), Timestamp.from(now), itemId, runId);
+    if (changed != 1) throw new IllegalStateException("题目已被其他操作更新，请刷新后重试");
+    Map<String, Object> eventSnapshot = new LinkedHashMap<>();
+    eventSnapshot.put("question", current.question());
+    eventSnapshot.put("status", "APPROVED_WITH_RISK");
+    eventSnapshot.put("version", current.questionVersion());
+    eventSnapshot.put("riskAccepted", true);
+    jdbc.update("insert into exam_project_question_review_events(id,generation_item_id,actor_id,action,from_status,to_status,question_version,comment,snapshot_json,created_at) values(?,?,?,?,?,?,?,?,?,?)",
+        UUID.randomUUID(), itemId, actor, "RISK_ACCEPTED", current.status(), "APPROVED_WITH_RISK", current.questionVersion(),
+        note, write(eventSnapshot), Timestamp.from(now));
+    refreshRun(runId);
+    return view(load(projectId, runId, itemId));
+  }
+
   public List<QuestionVersion> versions(UUID projectId, UUID runId, UUID itemId) {
     ItemState current = load(projectId, runId, itemId);
     ensureHistory(current);
@@ -111,17 +148,21 @@ public class ExamProjectQuestionReviewService {
 
   public ExportReadiness exportReadiness(UUID projectId, UUID runId) {
     ItemState current = loadAny(projectId, runId);
-    Integer total = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=?", Integer.class, runId);
-    Integer approved = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status='APPROVED'", Integer.class, runId);
+    Integer total = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status<>'REMOVED'", Integer.class, runId);
+    Integer approved = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status in ('APPROVED','APPROVED_WITH_RISK')", Integer.class, runId);
+    Integer riskAccepted = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status='APPROVED_WITH_RISK'", Integer.class, runId);
     Integer failed = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status in ('FAILED','REJECTED')", Integer.class, runId);
+    Integer removed = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status='REMOVED'", Integer.class, runId);
     int totalCount = total == null ? 0 : total;
     int approvedCount = approved == null ? 0 : approved;
+    int riskAcceptedCount = riskAccepted == null ? 0 : riskAccepted;
     int failedCount = failed == null ? 0 : failed;
+    int removedCount = removed == null ? 0 : removed;
     List<String> blockers = new ArrayList<>();
     if (totalCount == 0) blockers.add("没有可导出的题目");
     if (approvedCount < totalCount) blockers.add("仍有 " + (totalCount - approvedCount) + " 道题目未人工审核通过");
     if (failedCount > 0) blockers.add("有 " + failedCount + " 道题目被驳回或生成失败");
-    return new ExportReadiness(runId, totalCount, approvedCount, failedCount, blockers.isEmpty(), List.copyOf(blockers));
+    return new ExportReadiness(runId, totalCount, approvedCount, riskAcceptedCount, failedCount, removedCount, blockers.isEmpty(), List.copyOf(blockers));
   }
 
   private ItemState load(UUID projectId, UUID runId, UUID itemId) {
@@ -188,8 +229,19 @@ public class ExamProjectQuestionReviewService {
   }
 
   private void refreshRun(UUID runId) {
+    Instant now = Instant.now();
     jdbc.update("update exam_project_generation_runs set processed_count=(select count(*) from exam_project_generation_items where run_id=? and status not in ('PLANNED','GENERATING')),review_required_count=(select count(*) from exam_project_generation_items where run_id=? and status='REVIEW_REQUIRED'),review_pending_count=(select count(*) from exam_project_generation_items where run_id=? and status='REVIEW_PENDING'),failed_count=(select count(*) from exam_project_generation_items where run_id=? and status in ('FAILED','REJECTED')),updated_at=? where id=?",
-        runId, runId, runId, runId, Timestamp.from(Instant.now()), runId);
+        runId, runId, runId, runId, Timestamp.from(now), runId);
+    long active = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status<>'REMOVED'", Long.class, runId);
+    long approved = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status in ('APPROVED','APPROVED_WITH_RISK')", Long.class, runId);
+    long reviewRequired = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status='REVIEW_REQUIRED'", Long.class, runId);
+    long reviewPending = jdbc.queryForObject("select count(*) from exam_project_generation_items where run_id=? and status='REVIEW_PENDING'", Long.class, runId);
+    long completed = approved + reviewRequired;
+    String status = active > 0 && approved == active ? "SUCCEEDED"
+        : active > 0 && completed == active ? "REVIEW_REQUIRED"
+        : completed > 0 ? "PARTIAL"
+        : reviewPending > 0 ? "REVIEW_PENDING" : "FAILED";
+    jdbc.update("update exam_project_generation_runs set status=?,updated_at=? where id=?", status, Timestamp.from(now), runId);
   }
 
   private ReviewItem view(ItemState state) {
@@ -244,6 +296,6 @@ public class ExamProjectQuestionReviewService {
       Map<String, Object> evidence, String changeType, String changeSummary, UUID actorId, Instant createdAt) { }
   public record ReviewEvent(UUID id, UUID actorId, String actorName, String action, String fromStatus, String toStatus,
       int questionVersion, String comment, Map<String, Object> snapshot, Instant createdAt) { }
-  public record ExportReadiness(UUID runId, int totalCount, int approvedCount, int failedCount, boolean ready,
+  public record ExportReadiness(UUID runId, int totalCount, int approvedCount, int riskAcceptedCount, int failedCount, int removedCount, boolean ready,
       List<String> blockers) { }
 }

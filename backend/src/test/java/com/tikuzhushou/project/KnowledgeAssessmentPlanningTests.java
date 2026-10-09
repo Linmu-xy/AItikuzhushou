@@ -114,17 +114,20 @@ class KnowledgeAssessmentPlanningTests {
   }
 
   @Test
-  void rejectsPlanThatRequiresMissingDwg() {
+  void rejectsPlanThatStillRequiresMissingDwgAfterOneTargetedRecovery() {
     UUID document = UUID.randomUUID();
     JdbcTemplate jdbc = database(document);
     DeepSeekService ai = mock(DeepSeekService.class);
     KnowledgeVisualService visuals = mock(KnowledgeVisualService.class);
     when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_PLAN")))
         .thenReturn("{\"summary\":\"实操\",\"items\":[{\"competency\":\"CAD修复\",\"task\":\"修复给定DWG文件并提交\",\"type\":\"PRACTICAL_TASK\",\"difficulty\":\"HARD\",\"documentId\":\"" + document + "\",\"requiredMaterial\":\"EXTERNAL_ARTIFACT\"}]}");
+    when(ai.analyseJsonFast(anyString(), anyString(), eq("ASSESSMENT_PLAN_MATERIAL_RECOVERY")))
+        .thenReturn("{\"items\":[{\"sequence\":1,\"task\":\"修复给定DWG文件并提交\",\"type\":\"PRACTICAL_TASK\",\"requiredMaterial\":\"EXTERNAL_ARTIFACT\"}]}");
     var service = new KnowledgeAssessmentPlanningService(jdbc, new ObjectMapper(), ai, visuals, mock(DeepSeekWebSearchService.class));
 
     assertThat(assertThrows(IllegalStateException.class,
-        () -> service.propose(project(), snapshot(document), 1, List.of())).getMessage()).contains("未提供的 DWG");
+        () -> service.propose(project(), snapshot(document), 1, List.of())).getMessage()).contains("第 1 题位", "仍依赖外部源文件");
+    verify(ai, times(1)).analyseJsonFast(anyString(), anyString(), eq("ASSESSMENT_PLAN_MATERIAL_RECOVERY"));
   }
 
   @Test
@@ -211,7 +214,7 @@ class KnowledgeAssessmentPlanningTests {
     jdbc.update("update document_pages set markdown=? where document_id=? and page_no=1", "前部概念".repeat(4000), document);
     jdbc.update("update document_pages set markdown=? where document_id=? and page_no=2", "末尾重要实验方法", document);
     DeepSeekService ai = mock(DeepSeekService.class);
-    when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_INDEX")))
+    when(ai.analyseJsonFast(anyString(), anyString(), eq("ASSESSMENT_INDEX")))
         .thenAnswer(invocation -> invocation.<String>getArgument(1).contains("末尾重要实验方法")
             ? "{\"summary\":\"末尾重要实验方法\"}" : "{\"summary\":\"前部概念\"}");
     when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_PLAN")))
@@ -220,6 +223,9 @@ class KnowledgeAssessmentPlanningTests {
         mock(KnowledgeVisualService.class), mock(DeepSeekWebSearchService.class));
     assertThat(service.propose(project(), snapshot(document), 1, List.of()).corpusContext())
         .contains("前部概念", "末尾重要实验方法");
+    verify(ai, times(2)).analyseJsonFast(anyString(), anyString(), eq("ASSESSMENT_INDEX"));
+    verify(ai, never()).analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_INDEX"));
+    verify(ai, never()).analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_INDEX"));
   }
 
   @Test

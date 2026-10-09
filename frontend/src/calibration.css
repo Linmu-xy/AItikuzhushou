@@ -542,6 +542,14 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .calibration-shell .task-code { border-color: var(--cal-line); background: #f6f9f8; }
 .calibration-shell .task-fab { background: var(--cal-rail)!important; box-shadow: 0 12px 30px rgba(18,36,44,.23); }
 
+/* Background work is reachable from the header area; it no longer needs a page of its own. */
+.calibration-shell .task-fab { top: 14px; right: 176px; bottom: auto; padding: 6px 10px !important; border-radius: 10px !important; }
+.calibration-shell .task-fab span { width: 30px; height: 30px; font-size: 11px; }
+.calibration-shell .task-fab b { max-width: 145px; font-size: 11px; }
+@media (max-width: 760px) {
+  .calibration-shell .task-fab { top: 70px; right: 12px; }
+}
+
 /* Keyboard users can bypass the long grouped navigation. */
 .skip-link {
   position: fixed;

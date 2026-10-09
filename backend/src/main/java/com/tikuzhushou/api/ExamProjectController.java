@@ -71,6 +71,11 @@ public class ExamProjectController {
   @GetMapping
   List<ExamProjectService.ProjectView> list() { return projects.list(); }
 
+  @GetMapping("/task-center")
+  TaskCenterView taskCenter() {
+    return new TaskCenterView(projects.list(), generation.listSummaries(), exports.listSummaries());
+  }
+
   @GetMapping("/generation-runs")
   List<ExamProjectVariantGenerationService.RunView> listGenerationRunSummaries() {
     return generation.listSummaries();
@@ -184,6 +189,35 @@ public class ExamProjectController {
     return value;
   }
 
+  @PostMapping("/{id}/variant-generation-runs/{runId}/items/{itemId}/retry-generation")
+  ResponseEntity<ExamProjectVariantGenerationService.RunView> retryVariantGeneration(@PathVariable UUID id,
+      @PathVariable UUID runId, @PathVariable UUID itemId) {
+    var value = generation.retryFailedItem(id, runId, itemId);
+    generationWorker.submit(value.id());
+    audit.record("EXAM_PROJECT_QUESTION_GENERATION_RETRY", "EXAM_PROJECT", id, null,
+        Map.of("runId", runId, "itemId", itemId));
+    return ResponseEntity.accepted().body(value);
+  }
+
+  @PostMapping("/{id}/variant-generation-runs/{runId}/items/{itemId}/remove")
+  ExamProjectVariantGenerationService.RunView removeFailedVariantQuestion(@PathVariable UUID id,
+      @PathVariable UUID runId, @PathVariable UUID itemId) {
+    var value = generation.removeFailedItem(id, runId, itemId);
+    audit.record("EXAM_PROJECT_QUESTION_REMOVE", "EXAM_PROJECT", id, null,
+        Map.of("runId", runId, "itemId", itemId));
+    return value;
+  }
+
+  @PostMapping("/{id}/variant-generation-runs/{runId}/items/{itemId}/keep-original")
+  ExamProjectQuestionReviewService.ReviewItem keepOriginalVariantQuestion(@PathVariable UUID id,
+      @PathVariable UUID runId, @PathVariable UUID itemId,
+      @RequestBody(required = false) KeepOriginalRequest request) {
+    var value = questionReview.keepOriginal(id, runId, itemId, request == null ? null : request.comment());
+    audit.record("EXAM_PROJECT_QUESTION_KEEP_ORIGINAL", "EXAM_PROJECT", id, null,
+        Map.of("runId", runId, "itemId", itemId, "status", value.status(), "questionVersion", value.questionVersion()));
+    return value;
+  }
+
   @GetMapping("/{id}/variant-generation-runs/{runId}/items/{itemId}/versions")
   List<ExamProjectQuestionReviewService.QuestionVersion> questionVersions(@PathVariable UUID id, @PathVariable UUID runId,
       @PathVariable UUID itemId) {
@@ -200,6 +234,8 @@ public class ExamProjectController {
   ExamProjectQuestionReviewService.ExportReadiness exportReadiness(@PathVariable UUID id, @PathVariable UUID runId) {
     return questionReview.exportReadiness(id, runId);
   }
+
+  record KeepOriginalRequest(String comment) { }
 
   @GetMapping("/{id}/variant-generation-runs/{runId}/exports")
   List<ExamProjectExportService.ExportRunView> listExports(@PathVariable UUID id, @PathVariable UUID runId) {
@@ -240,4 +276,7 @@ public class ExamProjectController {
   }
 
   public record GenerateRequest(String generationMode) { }
+  public record TaskCenterView(List<ExamProjectService.ProjectView> projects,
+      List<ExamProjectVariantGenerationService.RunView> generationRuns,
+      List<ExamProjectExportService.ExportRunView> exports) { }
 }

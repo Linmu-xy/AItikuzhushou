@@ -104,6 +104,14 @@ public class DeepSeekService {
         Map.of("role", "user", "content", prompt)), true, maxTokens, false, "low", operation);
   }
 
+  /** Uses the configured text model's default output budget, not an application token cap. */
+  public String analyseJsonFast(String system, String prompt, String operation) {
+    String jsonSystem = system + "\n你必须只输出合法 JSON，不得输出 Markdown 代码块或 JSON 之外的文字。";
+    return completion(client, configuration.settings().textModel(), List.of(
+        Map.of("role", "system", "content", jsonSystem),
+        Map.of("role", "user", "content", prompt)), true, null, false, "low", operation);
+  }
+
   /** Assessment authoring may inspect original pages and crops, not only their OCR transcription. */
   public String analyseAssessmentImagesJson(String system, String prompt, List<byte[]> images,
       int maxTokens, String reasoningEffort, String operation) {
@@ -227,7 +235,7 @@ public class DeepSeekService {
   }
 
   private String completion(RestClient requestClient, String model, List<Map<String, Object>> messages, boolean jsonMode,
-      int maxTokens, boolean thinking, String reasoningEffort, String operation) {
+      Integer maxTokens, boolean thinking, String reasoningEffort, String operation) {
     String key = configuration.settings().apiKey();
     if (key.isBlank()) {
       log.error("deepseek call blocked: DEEPSEEK_API_KEY is not configured");
@@ -243,7 +251,7 @@ public class DeepSeekService {
       default -> "high";
     });
     body.put("stream", false);
-    body.put("max_tokens", maxTokens);
+    if (maxTokens != null) body.put("max_tokens", maxTokens);
     if (!thinking) body.put("temperature", jsonMode ? 0.1 : 0.0);
     if (jsonMode) body.put("response_format", Map.of("type", "json_object"));
 
@@ -252,6 +260,7 @@ public class DeepSeekService {
     Map<?, ?> result = null;
     ModelQuotaService.Usage reportedUsage = ModelQuotaService.Usage.EMPTY;
     int visibleOutputChars = 0;
+    String responseFailure = "INVALID_RESPONSE";
     boolean accounted = false;
     try {
       result = requestClient.post().uri("/chat/completions")
@@ -268,16 +277,25 @@ public class DeepSeekService {
     }
     try {
       Object choicesValue = result == null ? null : result.get("choices");
-      if (!(choicesValue instanceof List<?> choices) || choices.isEmpty()) throw new IllegalStateException();
+      if (!(choicesValue instanceof List<?> choices) || choices.isEmpty()) {
+        responseFailure = "CHOICES_MISSING";
+        throw new IllegalStateException();
+      }
       Object first = choices.getFirst();
       if (!(first instanceof Map<?, ?> choice) || !(choice.get("message") instanceof Map<?, ?> message)) {
+        responseFailure = "MESSAGE_MISSING";
         throw new IllegalStateException();
       }
       String content = String.valueOf(message.get("content")).trim();
       visibleOutputChars = content.isBlank() || "null".equals(content) ? 0 : content.length();
-      if ("length".equals(choice.get("finish_reason")))
+      if ("length".equals(choice.get("finish_reason"))) {
+        responseFailure = "TRUNCATED";
         throw new ModelResponseException(ModelResponseException.Reason.TRUNCATED);
-      if (visibleOutputChars == 0) throw new ModelResponseException(ModelResponseException.Reason.EMPTY);
+      }
+      if (visibleOutputChars == 0) {
+        responseFailure = "EMPTY";
+        throw new ModelResponseException(ModelResponseException.Reason.EMPTY);
+      }
       long durationMs = (System.nanoTime() - started) / 1_000_000;
       quota.complete(reservation, visibleOutputChars, reportedUsage);
       quota.recordEvent(reservation, model, reasoningEffort, thinking, operation, visibleOutputChars, reportedUsage, durationMs);
@@ -288,8 +306,8 @@ public class DeepSeekService {
     } catch (Exception e) {
       if (!accounted) recordFailedCall(reservation, model, reasoningEffort, thinking, operation,
           visibleOutputChars, reportedUsage, started);
-      log.error("deepseek {} returned an empty or malformed response after {} ms", model,
-          (System.nanoTime() - started) / 1_000_000);
+      log.error("deepseek {} operation={} response={} returned an unusable response after {} ms, outputChars={}",
+          model, operation, responseFailure, (System.nanoTime() - started) / 1_000_000, visibleOutputChars);
       if (e instanceof ModelResponseException responseError) throw responseError;
       throw new IllegalStateException("模型响应为空或格式异常", e);
     }

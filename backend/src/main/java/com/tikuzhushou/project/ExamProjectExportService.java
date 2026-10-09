@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.pdfbox.Loader;
@@ -87,6 +88,7 @@ public class ExamProjectExportService {
   private static final String DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   private static final String PDF_TYPE = "application/pdf";
   private static final String ZIP_TYPE = "application/zip";
+  private static final Pattern OPTION_LABEL = Pattern.compile("(?iu)(?<![A-Za-z0-9])([A-HＡ-Ｈ])[.．、:：)）]\\s*");
 
   private final JdbcTemplate jdbc;
   @Autowired(required = false) private KnowledgeVisualService visuals;
@@ -133,6 +135,16 @@ public class ExamProjectExportService {
     if (!loadRun(generationRunId).projectId().equals(projectId)) throw new IllegalArgumentException("生成批次不属于当前项目");
     return jdbc.query("select id,project_id,generation_run_id,evidence_snapshot_id,status,output_types_json,requested_count,completed_count,error_message,created_at,started_at,finished_at,updated_at from exam_project_export_runs where project_id=? and generation_run_id=? order by created_at desc",
         (rs, row) -> withArtifacts(mapRun(rs)), projectId, generationRunId);
+  }
+
+  /** Lightweight task-center listing without loading artifact metadata for every export. */
+  public List<ExportRunView> listSummaries() {
+    String sql = "select e.id,e.project_id,e.generation_run_id,e.evidence_snapshot_id,e.status,e.output_types_json," +
+        "e.requested_count,e.completed_count,e.error_message,e.created_at,e.started_at,e.finished_at,e.updated_at " +
+        "from exam_project_export_runs e join exam_projects p on p.id=e.project_id " +
+        (access.admin() ? "" : "where p.owner_id=? ") + "order by e.updated_at desc limit 100";
+    return access.admin() ? jdbc.query(sql, (rs, row) -> mapRun(rs))
+        : jdbc.query(sql, (rs, row) -> mapRun(rs), access.currentUserId());
   }
 
   public ExportRunView get(UUID id) {
@@ -272,6 +284,7 @@ public class ExamProjectExportService {
   }
 
   private byte[] buildDocx(RunHeader header, String kind, List<QuestionRow> rows) throws Exception {
+    Map<QuestionRow, Integer> numbers = exportNumbers(rows);
     try (XWPFDocument document = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
       configureDocxPage(document);
       String title = switch (kind) {
@@ -279,8 +292,16 @@ public class ExamProjectExportService {
         case "answer" -> "答案与评分细则";
         default -> "命题项目审批表";
       };
-      addDocxParagraph(document, title, 16, true, ParagraphAlignment.CENTER);
-      addDocxParagraph(document, "项目：" + header.projectName(), 10, false, ParagraphAlignment.LEFT);
+      XWPFParagraph titleParagraph = addDocxParagraph(document, title, 18, true, ParagraphAlignment.CENTER);
+      var titleStyle = org.openxmlformats.schemas.wordprocessingml.x2006.main.CTStyle.Factory.newInstance();
+      titleStyle.setStyleId("Title");
+      titleStyle.setType(org.openxmlformats.schemas.wordprocessingml.x2006.main.STStyleType.PARAGRAPH);
+      titleStyle.addNewName().setVal("Title");
+      document.createStyles().addStyle(new org.apache.poi.xwpf.usermodel.XWPFStyle(titleStyle));
+      titleParagraph.setStyle("Title");
+      titleParagraph.setSpacingAfter(240);
+      titleParagraph.setKeepNext(true);
+      addDocxParagraph(document, "项目：" + header.projectName(), 12, false, ParagraphAlignment.LEFT).setKeepNext(true);
 
       if ("approval".equals(kind)) {
         addDocxParagraph(document, "生成批次：" + header.runId(), 9, false, ParagraphAlignment.LEFT);
@@ -288,34 +309,66 @@ public class ExamProjectExportService {
         addDocxParagraph(document, "审批人：____________________    审批日期：____________________", 10, false, ParagraphAlignment.LEFT);
         addDocxParagraph(document, "审批意见：", 10, true, ParagraphAlignment.LEFT);
         addDocxParagraph(document, "", 10, false, ParagraphAlignment.LEFT);
-        addDocxTable(document, new String[] { "套次", "题号", "题型", "难度", "分值", "状态", "版本", "审核人" },
-            rows.stream().map(item -> List.of(item.variantLabel(), Integer.toString(item.sequenceNo()), item.typeLabel(),
+        addDocxTable(document, new String[] { "套次", "原题号", "导出题号", "题型", "难度", "分值", "状态", "版本", "审核人" },
+            rows.stream().map(item -> List.of(item.variantLabel(), Integer.toString(item.sequenceNo()), Integer.toString(numbers.get(item)), typeName(item),
                 difficultyName(item.difficulty()), Integer.toString(item.points()), item.status(), Integer.toString(item.questionVersion()),
                 item.reviewerName())).toList());
       } else {
+        boolean firstVariant = true;
         for (Map.Entry<Integer, List<QuestionRow>> entry : byVariant(rows).entrySet()) {
           String label = entry.getValue().isEmpty() ? Integer.toString(entry.getKey()) : entry.getValue().getFirst().variantLabel();
-          addDocxParagraph(document, "第" + label + "套", 13, true, ParagraphAlignment.LEFT);
+          XWPFParagraph variantHeading = addDocxParagraph(document, "第" + label + "套", 14, true, ParagraphAlignment.LEFT);
+          variantHeading.setPageBreak(!firstVariant);
+          variantHeading.setKeepNext(true);
+          firstVariant = false;
+          Map<String, List<QuestionRow>> typeGroups = byQuestionType(entry.getValue());
+          String previousType = "";
+          int sectionIndex = 0;
           for (QuestionRow item : entry.getValue()) {
-            addDocxParagraph(document, item.sequenceNo() + "．" + item.typeLabel() + "｜"
-                + difficultyName(item.difficulty()) + "｜" + item.points() + "分", 10, true, ParagraphAlignment.LEFT);
-            addDocxParagraph(document, displayValue(item.question().get("stem")), 10, false, ParagraphAlignment.LEFT);
-            for (byte[] stimulus : stimulusImages(header.projectId(), item.question())) {
+            String typeKey = typeKey(item);
+            if (!previousType.equals(typeKey)) {
+              XWPFParagraph sectionHeading = addDocxParagraph(document, sectionTitle(++sectionIndex, typeGroups.get(typeKey)), 14, true, ParagraphAlignment.LEFT);
+              sectionHeading.setSpacingBefore(200);
+              sectionHeading.setKeepNext(true);
+              previousType = typeKey;
+            }
+            List<String> options = docxOptions(item.question().get("options"));
+            List<byte[]> images = stimulusImages(header.projectId(), item.question());
+            XWPFParagraph questionHeading = addDocxParagraph(document, numbers.get(item) + "．（"
+                + typeName(item) + "，" + item.points() + "分）", 12, true, ParagraphAlignment.LEFT);
+            questionHeading.setSpacingBefore(240);
+            questionHeading.setKeepNext(true);
+            XWPFParagraph stem = addDocxParagraph(document, displayValue(item.question().get("stem")), 12, false, ParagraphAlignment.LEFT);
+            stem.setKeepNext(!options.isEmpty() || !images.isEmpty());
+            for (int imageIndex = 0; imageIndex < images.size(); imageIndex++) {
+              byte[] stimulus = images.get(imageIndex);
               BufferedImage image = ImageIO.read(new ByteArrayInputStream(stimulus));
               if (image == null) throw new IllegalStateException("题目原图无法读取");
               double scale = Math.min(460d / image.getWidth(), 340d / image.getHeight());
-              XWPFRun imageRun = document.createParagraph().createRun();
+              XWPFParagraph imageParagraph = document.createParagraph();
+              imageParagraph.setAlignment(ParagraphAlignment.CENTER);
+              imageParagraph.setSpacingAfter(120);
+              imageParagraph.setKeepNext(imageIndex + 1 < images.size() || !options.isEmpty());
+              XWPFRun imageRun = imageParagraph.createRun();
               imageRun.addPicture(new ByteArrayInputStream(stimulus), XWPFDocument.PICTURE_TYPE_PNG,
                   "题目配图.png", Units.toEMU(Math.max(1, (int) (image.getWidth() * scale))),
                   Units.toEMU(Math.max(1, (int) (image.getHeight() * scale))));
             }
-            String options = displayValue(item.question().get("options"));
-            if (!options.isBlank()) addDocxParagraph(document, "选项：" + options, 10, false, ParagraphAlignment.LEFT);
+            for (String option : options) {
+              XWPFParagraph optionParagraph = addDocxParagraph(document, option, 12, false, ParagraphAlignment.LEFT);
+              optionParagraph.setIndentationLeft(480);
+              optionParagraph.setIndentationHanging(360);
+              optionParagraph.setSpacingAfter(40);
+              // A tab makes wrapped lines align with the option text instead of its label.
+              var tabs = optionParagraph.getCTP().getPPr().addNewTabs();
+              var tab = tabs.addNewTab();
+              tab.setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STTabJc.LEFT);
+              tab.setPos(BigInteger.valueOf(480));
+            }
             if ("answer".equals(kind)) {
-              addDocxParagraph(document, "答案：" + displayValue(item.question().get("answer")), 10, false, ParagraphAlignment.LEFT);
-              addDocxParagraph(document, "解析：" + displayValue(item.question().get("analysis")), 10, false, ParagraphAlignment.LEFT);
-              addDocxParagraph(document, "评分细则：" + displayValue(item.question().get("scoringRubric")), 10, false, ParagraphAlignment.LEFT);
-              addDocxParagraph(document, "题目版本：" + item.questionVersion() + "｜审核人：" + item.reviewerName(), 9, false, ParagraphAlignment.LEFT);
+              addDocxAnswerBlock(document, "答案", displayValue(item.question().get("answer")));
+              addDocxAnswerBlock(document, "解析", displayValue(item.question().get("analysis")));
+              addDocxAnswerBlock(document, "评分细则", docxScoringRubric(item.question()));
             }
           }
         }
@@ -332,23 +385,127 @@ public class ExamProjectExportService {
     pageSize.setW(BigInteger.valueOf(11906));
     pageSize.setH(BigInteger.valueOf(16838));
     var margins = section.isSetPgMar() ? section.getPgMar() : section.addNewPgMar();
-    margins.setTop(BigInteger.valueOf(850));
-    margins.setBottom(BigInteger.valueOf(850));
-    margins.setLeft(BigInteger.valueOf(900));
-    margins.setRight(BigInteger.valueOf(900));
+    margins.setTop(BigInteger.valueOf(1440));
+    margins.setBottom(BigInteger.valueOf(1440));
+    margins.setLeft(BigInteger.valueOf(1417));
+    margins.setRight(BigInteger.valueOf(1417));
   }
 
   private XWPFParagraph addDocxParagraph(XWPFDocument document, String value, int size, boolean bold,
       ParagraphAlignment alignment) {
     XWPFParagraph paragraph = document.createParagraph();
     paragraph.setAlignment(alignment);
-    paragraph.setSpacingAfter(100);
+    paragraph.setSpacingAfter(120);
+    paragraph.setSpacingBetween(1.25);
+    paragraph.getCTP().getPPr().addNewWidowControl().setVal(true);
     XWPFRun run = paragraph.createRun();
-    run.setFontFamily("Microsoft YaHei");
+    run.setFontFamily("Times New Roman");
+    run.setFontFamily("宋体", XWPFRun.FontCharRange.eastAsia);
     run.setFontSize(size);
     run.setBold(bold);
-    run.setText(shortText(Objects.toString(value, "")));
+    run.setColor("000000");
+    String[] lines = shortText(Objects.toString(value, "")).replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0) run.addBreak();
+      String[] pieces = lines[i].split("\t", -1);
+      for (int j = 0; j < pieces.length; j++) {
+        if (j > 0) run.addTab();
+        run.setText(pieces[j]);
+      }
+    }
     return paragraph;
+  }
+
+  private void addDocxAnswerBlock(XWPFDocument document, String label, String value) {
+    if (value.isBlank()) return;
+    XWPFParagraph heading = addDocxParagraph(document, label + "：", 12, true, ParagraphAlignment.LEFT);
+    heading.setSpacingBefore(120);
+    heading.setSpacingAfter(40);
+    heading.setKeepNext(true);
+    for (String line : value.replace("\r\n", "\n").replace('\r', '\n').split("\n")) {
+      if (!line.isBlank()) addDocxParagraph(document, line.strip(), 12, false, ParagraphAlignment.LEFT);
+    }
+  }
+
+  private String docxScoringRubric(Map<String, Object> question) {
+    if (question.get("scoringItems") instanceof List<?> items && !items.isEmpty()) {
+      List<String> criteria = new ArrayList<>();
+      for (Object item : items) {
+        if (item instanceof Map<?, ?> row && !displayValue(row.get("criterion")).isBlank()) {
+          String points = displayValue(row.get("points"));
+          criteria.add(displayValue(row.get("criterion")) + (points.isBlank() ? "" : "（" + points + "分）"));
+        }
+      }
+      if (!criteria.isEmpty()) return String.join("\n", criteria);
+    }
+    return displayValue(question.get("scoringRubric")).replaceAll("[；;]\\s*", "\n");
+  }
+
+  /** Accept historical pipe-separated strings and current structured options without changing stored questions. */
+  private List<String> docxOptions(Object value) {
+    if (value == null) return List.of();
+    if (value instanceof String raw) {
+      String text = raw.strip();
+      if (text.isEmpty()) return List.of();
+      if (text.startsWith("{") || text.startsWith("[")) {
+        try { return docxOptions(json.readValue(text, Object.class)); }
+        catch (IOException ignored) { /* Keep malformed historical text visible rather than dropping it. */ }
+      }
+      var matcher = OPTION_LABEL.matcher(text);
+      List<Integer> starts = new ArrayList<>();
+      while (matcher.find()) starts.add(matcher.start());
+      List<String> result = new ArrayList<>();
+      // Split on labels, not every pipe/newline: those can belong to an option's actual content.
+      if (!starts.isEmpty() && starts.getFirst() == 0) {
+        for (int i = 0; i < starts.size(); i++) {
+          int end = i + 1 < starts.size() ? starts.get(i + 1) : text.length();
+          String part = text.substring(starts.get(i), end).strip();
+          // Remove only an unpaired separator between options, never the closing bar in |x| or final punctuation.
+          if (i + 1 < starts.size() && (part.endsWith("|") || part.endsWith("｜"))
+              && part.chars().filter(c -> c == '|' || c == '｜').count() % 2 == 1) {
+            part = part.substring(0, part.length() - 1).stripTrailing();
+          }
+          result.add(docxOption("", part, i));
+        }
+      } else {
+        for (String part : text.split("[|｜\\r\\n]+")) {
+          if (!part.isBlank()) result.add(docxOption("", part, result.size()));
+        }
+      }
+      return result;
+    }
+    List<String> result = new ArrayList<>();
+    if (value instanceof Map<?, ?> map) {
+      map.entrySet().stream().sorted(java.util.Comparator.comparing(entry -> optionLabel(Objects.toString(entry.getKey(), ""))))
+          .forEach(entry -> result.add(docxOption(Objects.toString(entry.getKey(), ""), displayValue(entry.getValue()), result.size())));
+    } else if (value instanceof List<?> list) {
+      for (Object entry : list) {
+        if (entry instanceof Map<?, ?> map) {
+          Object content = map.containsKey("text") ? map.get("text") : map.containsKey("content") ? map.get("content") : map.get("value");
+          if (content != null) {
+            Object label = map.containsKey("label") ? map.get("label") : map.get("key");
+            result.add(docxOption(Objects.toString(label, ""), displayValue(content), result.size()));
+          } else result.addAll(docxOptions(map));
+        } else result.add(docxOption("", displayValue(entry), result.size()));
+      }
+    } else result.add(docxOption("", displayValue(value), 0));
+    return result;
+  }
+
+  private String docxOption(String label, String content, int index) {
+    String text = content.strip();
+    var matcher = OPTION_LABEL.matcher(text);
+    if (matcher.lookingAt()) {
+      if (label.isBlank()) label = matcher.group(1);
+      text = text.substring(matcher.end()).strip();
+    }
+    if (label.isBlank()) label = Character.toString('A' + index);
+    return optionLabel(label) + ".\t" + text;
+  }
+
+  private String optionLabel(String label) {
+    return java.text.Normalizer.normalize(label.strip(), java.text.Normalizer.Form.NFKC)
+        .replaceAll("[.、:：)）]+$", "").toUpperCase(Locale.ROOT);
   }
 
   private void addDocxTable(XWPFDocument document, String[] headers, List<List<String>> values) {
@@ -395,6 +552,7 @@ public class ExamProjectExportService {
   }
 
   private byte[] buildPdf(RunHeader header, String kind, List<QuestionRow> rows) throws Exception {
+    Map<QuestionRow, Integer> numbers = exportNumbers(rows);
     Path font = resolvePdfFont();
     try (PDDocument document = new PDDocument(); InputStream fontInput = Files.newInputStream(font);
          ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -414,27 +572,38 @@ public class ExamProjectExportService {
           canvas.paragraph("审批人：____________________    审批日期：____________________", 10);
           canvas.paragraph("审批意见：", 10);
           for (QuestionRow item : rows) {
-            canvas.heading(item.variantLabel() + " - 第" + item.sequenceNo() + "题");
-            canvas.paragraph("题型：" + item.typeLabel() + "｜难度：" + difficultyName(item.difficulty())
+            canvas.heading(item.variantLabel() + " - 原题号 " + item.sequenceNo() + "，导出题号 " + numbers.get(item));
+            canvas.paragraph("题型：" + typeName(item) + "｜难度：" + difficultyName(item.difficulty())
                 + "｜分值：" + item.points() + "｜状态：" + item.status(), 9);
             canvas.paragraph("版本：" + item.questionVersion() + "｜审核人：" + item.reviewerName(), 9);
             canvas.paragraph("审核意见：" + item.reviewComment(), 9);
           }
         } else {
+          boolean firstVariant = true;
           for (Map.Entry<Integer, List<QuestionRow>> entry : byVariant(rows).entrySet()) {
             String label = entry.getValue().isEmpty() ? Integer.toString(entry.getKey()) : entry.getValue().getFirst().variantLabel();
+            if (!firstVariant) canvas.newPage();
+            firstVariant = false;
             canvas.heading("第" + label + "套");
+            Map<String, List<QuestionRow>> typeGroups = byQuestionType(entry.getValue());
+            String previousType = "";
+            int sectionIndex = 0;
             for (QuestionRow item : entry.getValue()) {
-              canvas.heading(item.sequenceNo() + "．" + item.typeLabel() + "｜" + difficultyName(item.difficulty()) + "｜" + item.points() + "分");
+              String typeKey = typeKey(item);
+              if (!previousType.equals(typeKey)) {
+                canvas.ensureSpace(80);
+                canvas.heading(sectionTitle(++sectionIndex, typeGroups.get(typeKey)));
+                previousType = typeKey;
+              }
+              canvas.ensureSpace(45);
+              canvas.heading(numbers.get(item) + "．（" + typeName(item) + "，" + item.points() + "分）");
               canvas.paragraph(displayValue(item.question().get("stem")), 10);
               for (byte[] stimulus : stimulusImages(header.projectId(), item.question())) canvas.image(stimulus);
-              String options = displayValue(item.question().get("options"));
-              if (!options.isBlank()) canvas.paragraph("选项：" + options, 10);
+              for (String option : docxOptions(item.question().get("options"))) canvas.paragraph(option, 10);
               if ("answer".equals(kind)) {
                 canvas.paragraph("答案：" + displayValue(item.question().get("answer")), 10);
                 canvas.paragraph("解析：" + displayValue(item.question().get("analysis")), 10);
-                canvas.paragraph("评分细则：" + displayValue(item.question().get("scoringRubric")), 10);
-                canvas.paragraph("题目版本：" + item.questionVersion() + "｜审核人：" + item.reviewerName(), 9);
+                canvas.paragraph("评分细则：" + docxScoringRubric(item.question()), 10);
               }
             }
           }
@@ -520,6 +689,7 @@ public class ExamProjectExportService {
   }
 
   private void writePaper(XSSFWorkbook workbook, Styles styles, RunHeader header, List<QuestionRow> rows) {
+    Map<QuestionRow, Integer> numbers = exportNumbers(rows);
     for (Map.Entry<Integer, List<QuestionRow>> entry : byVariant(rows).entrySet()) {
       String label = entry.getValue().getFirst().variantLabel();
       Sheet sheet = workbook.createSheet(shortenSheet("试卷-第" + label + "套"));
@@ -527,10 +697,19 @@ public class ExamProjectExportService {
       row(sheet, 3, styles.header(), "题号", "题型", "难度", "分值", "题目", "选项");
       int index = 4;
       XSSFDrawing drawing = null;
+      Map<String, List<QuestionRow>> typeGroups = byQuestionType(entry.getValue());
+      String previousType = "";
+      int sectionIndex = 0;
       for (QuestionRow item : entry.getValue()) {
+        String typeKey = typeKey(item);
+        if (!previousType.equals(typeKey)) {
+          addExcelSection(sheet, index++, 6, styles.header(), sectionTitle(++sectionIndex, typeGroups.get(typeKey)));
+          previousType = typeKey;
+        }
         Row row = sheet.createRow(index++);
-        cell(row, 0, item.sequenceNo()); cell(row, 1, item.typeLabel()); cell(row, 2, difficultyName(item.difficulty()));
-        cell(row, 3, item.points()); cell(row, 4, text(item.question().get("stem"))); cell(row, 5, text(item.question().get("options")));
+        cell(row, 0, numbers.get(item)); cell(row, 1, typeName(item)); cell(row, 2, difficultyName(item.difficulty()));
+        cell(row, 3, item.points()); cell(row, 4, text(item.question().get("stem")));
+        cell(row, 5, String.join("\n", docxOptions(item.question().get("options"))).replace('\t', ' '));
         style(row, styles.body());
         for (byte[] stimulus : stimulusImages(header.projectId(), item.question())) {
           Row imageRow = sheet.createRow(index++);
@@ -548,17 +727,26 @@ public class ExamProjectExportService {
   }
 
   private void writeAnswer(XSSFWorkbook workbook, Styles styles, RunHeader header, List<QuestionRow> rows) {
+    Map<QuestionRow, Integer> numbers = exportNumbers(rows);
     for (Map.Entry<Integer, List<QuestionRow>> entry : byVariant(rows).entrySet()) {
       String label = entry.getValue().getFirst().variantLabel();
       Sheet sheet = workbook.createSheet(shortenSheet("答案-第" + label + "套"));
       title(sheet, styles, "答案与评分细则（第" + label + "套）", header.projectName(), "教师审核后交付");
       row(sheet, 3, styles.header(), "题号", "题型", "难度", "分值", "答案", "解析", "评分细则", "题目版本", "审核人");
       int index = 4;
+      Map<String, List<QuestionRow>> typeGroups = byQuestionType(entry.getValue());
+      String previousType = "";
+      int sectionIndex = 0;
       for (QuestionRow item : entry.getValue()) {
+        String typeKey = typeKey(item);
+        if (!previousType.equals(typeKey)) {
+          addExcelSection(sheet, index++, 9, styles.header(), sectionTitle(++sectionIndex, typeGroups.get(typeKey)));
+          previousType = typeKey;
+        }
         Row row = sheet.createRow(index++);
-        cell(row, 0, item.sequenceNo()); cell(row, 1, item.typeLabel()); cell(row, 2, difficultyName(item.difficulty()));
+        cell(row, 0, numbers.get(item)); cell(row, 1, typeName(item)); cell(row, 2, difficultyName(item.difficulty()));
         cell(row, 3, item.points()); cell(row, 4, text(item.question().get("answer"))); cell(row, 5, text(item.question().get("analysis")));
-        cell(row, 6, text(item.question().get("scoringRubric"))); cell(row, 7, item.questionVersion());
+        cell(row, 6, docxScoringRubric(item.question())); cell(row, 7, item.questionVersion());
         cell(row, 8, item.reviewerName()); style(row, styles.body());
       }
       finishSheet(sheet, new int[] { 10, 18, 10, 10, 22, 62, 62, 12, 18 }, 4);
@@ -566,6 +754,7 @@ public class ExamProjectExportService {
   }
 
   private void writeApproval(XSSFWorkbook workbook, Styles styles, RunHeader header, List<QuestionRow> rows) {
+    Map<QuestionRow, Integer> numbers = exportNumbers(rows);
     Sheet sheet = workbook.createSheet("审批表");
     title(sheet, styles, "命题项目审批表", header.projectName(), "全部题目已由教师人工审核通过");
     row(sheet, 3, styles.header(), "项目", header.projectName());
@@ -575,17 +764,23 @@ public class ExamProjectExportService {
     row(sheet, 7, styles.header(), "审批人", "");
     row(sheet, 8, styles.header(), "审批日期", "");
     row(sheet, 9, styles.header(), "审批意见", "");
-    row(sheet, 11, styles.header(), "套次", "题号", "题型", "难度", "分值", "状态", "版本", "审核人", "审核时间", "审核意见");
+    row(sheet, 11, styles.header(), "套次", "原题号", "题型", "难度", "分值", "状态", "版本", "审核人", "审核时间", "审核意见", "导出题号");
     int index = 12;
     for (QuestionRow item : rows) {
       Row value = sheet.createRow(index++);
-      cell(value, 0, item.variantLabel()); cell(value, 1, item.sequenceNo()); cell(value, 2, item.typeLabel());
+      cell(value, 0, item.variantLabel()); cell(value, 1, item.sequenceNo()); cell(value, 2, typeName(item));
       cell(value, 3, difficultyName(item.difficulty())); cell(value, 4, item.points()); cell(value, 5, item.status());
       cell(value, 6, item.questionVersion()); cell(value, 7, item.reviewerName());
       cell(value, 8, item.reviewedAt() == null ? "" : item.reviewedAt().toString());
-      cell(value, 9, item.reviewComment()); style(value, styles.body());
+      cell(value, 9, item.reviewComment()); cell(value, 10, numbers.get(item)); style(value, styles.body());
     }
-    finishSheet(sheet, new int[] { 10, 10, 18, 10, 10, 14, 10, 18, 25, 40 }, 11);
+    finishSheet(sheet, new int[] { 10, 10, 18, 10, 10, 14, 10, 18, 25, 40, 12 }, 12);
+  }
+
+  private void addExcelSection(Sheet sheet, int index, int columns, CellStyle style, String title) {
+    row(sheet, index, style, title);
+    sheet.getRow(index).setHeightInPoints(26);
+    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(index, index, 0, columns - 1));
   }
 
   private Payload attachmentPayload(RunHeader header) throws Exception {
@@ -628,7 +823,7 @@ public class ExamProjectExportService {
   }
 
   private List<QuestionRow> loadQuestions(UUID runId) {
-    return jdbc.query("select i.variant_no,i.variant_label,i.sequence_no,i.question_type,i.type_label,i.difficulty,i.points,i.status,i.question_json,i.question_version,i.reviewer_id,i.review_comment,i.reviewed_at,coalesce(u.username,'') reviewer_name from exam_project_generation_items i left join app_users u on u.id=i.reviewer_id where i.run_id=? order by i.variant_no,i.sequence_no",
+    return jdbc.query("select i.variant_no,i.variant_label,i.sequence_no,i.question_type,i.type_label,i.difficulty,i.points,i.status,i.question_json,i.question_version,i.reviewer_id,i.review_comment,i.reviewed_at,coalesce(u.username,'') reviewer_name from exam_project_generation_items i left join app_users u on u.id=i.reviewer_id where i.run_id=? and i.status in ('APPROVED','APPROVED_WITH_RISK') order by i.variant_no,i.sequence_no",
         (rs, row) -> new QuestionRow(rs.getInt("variant_no"), rs.getString("variant_label"), rs.getInt("sequence_no"),
             rs.getString("question_type"), rs.getString("type_label"), rs.getString("difficulty"), rs.getInt("points"),
             rs.getString("status"), readMap(rs.getString("question_json")), rs.getInt("question_version"),
@@ -637,8 +832,42 @@ public class ExamProjectExportService {
 
   private Map<Integer, List<QuestionRow>> byVariant(List<QuestionRow> rows) {
     Map<Integer, List<QuestionRow>> result = new LinkedHashMap<>();
-    for (QuestionRow row : rows) result.computeIfAbsent(row.variantNo(), ignored -> new ArrayList<>()).add(row);
+    rows.stream().sorted(java.util.Comparator.comparingInt(QuestionRow::variantNo)
+        .thenComparingInt(item -> QuestionTypeOrder.rank(item.questionType(), item.typeLabel()))
+        .thenComparing(this::typeKey).thenComparingInt(QuestionRow::sequenceNo))
+        .forEach(row -> result.computeIfAbsent(row.variantNo(), ignored -> new ArrayList<>()).add(row));
     return result;
+  }
+
+  private Map<QuestionRow, Integer> exportNumbers(List<QuestionRow> rows) {
+    Map<QuestionRow, Integer> result = new LinkedHashMap<>();
+    for (List<QuestionRow> variant : byVariant(rows).values()) {
+      for (int index = 0; index < variant.size(); index++) result.put(variant.get(index), index + 1);
+    }
+    return result;
+  }
+
+  private String typeKey(QuestionRow row) { return QuestionTypeOrder.key(row.questionType(), row.typeLabel()); }
+  private String typeName(QuestionRow row) { return QuestionTypeOrder.label(row.questionType(), row.typeLabel()); }
+
+  private Map<String, List<QuestionRow>> byQuestionType(List<QuestionRow> rows) {
+    Map<String, List<QuestionRow>> result = new LinkedHashMap<>();
+    for (QuestionRow row : rows) result.computeIfAbsent(typeKey(row), ignored -> new ArrayList<>()).add(row);
+    return result;
+  }
+
+  private String sectionTitle(int index, List<QuestionRow> rows) {
+    int points = rows.stream().mapToInt(QuestionRow::points).sum();
+    String uniform = rows.stream().map(QuestionRow::points).distinct().count() == 1
+        ? "，每题" + rows.getFirst().points() + "分" : "";
+    return sectionNumber(index) + "、" + typeName(rows.getFirst()) + "（共" + rows.size() + "题" + uniform + "，共" + points + "分）";
+  }
+
+  private String sectionNumber(int number) {
+    String[] digits = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九" };
+    if (number < 10) return digits[number];
+    if (number < 100) return (number / 10 == 1 ? "" : digits[number / 10]) + "十" + digits[number % 10];
+    return Integer.toString(number);
   }
 
   private void store(ExportRunView run, String output, Payload payload) throws Exception {

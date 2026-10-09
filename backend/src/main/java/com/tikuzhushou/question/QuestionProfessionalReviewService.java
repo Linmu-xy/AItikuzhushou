@@ -133,7 +133,7 @@ public class QuestionProfessionalReviewService {
     } catch (Exception error) {
       String message = compact(error.getMessage(), "专业审题服务不可用");
       return questions.stream().map(question -> new Review(sequence(question), false, 0,
-          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), message, List.of(), false)).toList();
+          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), message, List.of(), false, "REVIEW_PROVIDER_ERROR")).toList();
     }
   }
 
@@ -222,7 +222,7 @@ public class QuestionProfessionalReviewService {
     } catch (Exception error) {
       String message = compact(error.getMessage(), "知识库审题服务不可用");
       return questions.stream().map(question -> new Review(sequence(question), false, 0,
-          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), message, List.of(), false)).toList();
+          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), message, List.of(), false, "REVIEW_PROVIDER_ERROR")).toList();
     }
   }
 
@@ -297,7 +297,7 @@ public class QuestionProfessionalReviewService {
       int sequence = sequence(question);
       Map<String, Object> reviewed = mapped.get(sequence);
       result.add(reviewed == null ? new Review(sequence, false, 0,
-          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), "专业审题未返回该题结果", List.of(), false) : parseReview(reviewed, question));
+          List.of("PROFESSIONAL_REVIEW_UNAVAILABLE"), "专业审题未返回该题结果", List.of(), false, "REVIEW_PROTOCOL_ERROR") : parseReview(reviewed, question));
     }
     return result;
   }
@@ -315,13 +315,21 @@ public class QuestionProfessionalReviewService {
     List<String> finalFlags = List.copyOf(flagSet);
     boolean optionOnlyFailure = finalFlags.stream().anyMatch(this::optionOnlyFlag)
         && finalFlags.stream().allMatch(this::optionOnlyFlag);
-    boolean pass = score >= threshold && finalFlags.stream().noneMatch(flag -> BLOCKING_FLAGS.contains(flag)
+    boolean available = !(choice && !optionReviewsComplete(optionReviews));
+    if (!available) {
+      LinkedHashSet<String> unavailableFlags = new LinkedHashSet<>(finalFlags);
+      unavailableFlags.add("OPTION_REVIEW_UNAVAILABLE");
+      finalFlags = List.copyOf(unavailableFlags);
+    }
+    boolean pass = available && score >= threshold && finalFlags.stream().noneMatch(flag -> BLOCKING_FLAGS.contains(flag)
         && (!"SHADOW".equals(optionReviewMode) || !optionOnlyFlag(flag)))
         && ("PASS".equalsIgnoreCase(text(value.get("status"))) || ("SHADOW".equals(optionReviewMode) && optionOnlyFailure))
         && (!choice || "SHADOW".equals(optionReviewMode) || optionReviewsPass(optionReviews));
     String feedback = text(value.get("feedback"));
+    if (!available) feedback = "AI 审题响应缺少选择题 A-D 选项检查结果，请重新审题。";
     return new Review(sequence, pass, score, outsiderScore, finalFlags,
-        pass && feedback.isBlank() ? "" : compact(feedback, "专业审题未通过"), optionReviews, true);
+        pass && feedback.isBlank() ? "" : compact(feedback, "专业审题未通过"), optionReviews, available,
+        available ? null : "REVIEW_PROTOCOL_ERROR");
   }
 
   private Map<String, Object> input(Map<String, Object> question) {
@@ -460,18 +468,26 @@ public class QuestionProfessionalReviewService {
   }
 
   public record Review(int sequence, boolean passed, int discriminationScore, int outsiderSolvableScore,
-      List<String> flags, String feedback, List<OptionReview> optionReviews, boolean available) {
+      List<String> flags, String feedback, List<OptionReview> optionReviews, boolean available, String errorCode) {
     /** Compatibility constructor for existing integrations and persisted audit tests. */
     public Review(int sequence, boolean passed, int discriminationScore, int outsiderSolvableScore,
         List<String> flags, String feedback, List<OptionReview> optionReviews) {
-      this(sequence, passed, discriminationScore, outsiderSolvableScore, flags, feedback, optionReviews, true);
+      this(sequence, passed, discriminationScore, outsiderSolvableScore, flags, feedback, optionReviews, true, null);
     }
     public Review(int sequence, boolean passed, int discriminationScore, List<String> flags, String feedback) {
-      this(sequence, passed, discriminationScore, 100, flags, feedback, List.of(), true);
+      this(sequence, passed, discriminationScore, 100, flags, feedback, List.of(), true, null);
     }
     public Review(int sequence, boolean passed, int discriminationScore, List<String> flags, String feedback,
         List<OptionReview> optionReviews, boolean available) {
-      this(sequence, passed, discriminationScore, 100, flags, feedback, optionReviews, available);
+      this(sequence, passed, discriminationScore, 100, flags, feedback, optionReviews, available, null);
+    }
+    public Review(int sequence, boolean passed, int discriminationScore, List<String> flags, String feedback,
+        List<OptionReview> optionReviews, boolean available, String errorCode) {
+      this(sequence, passed, discriminationScore, 100, flags, feedback, optionReviews, available, errorCode);
+    }
+    public Review(int sequence, boolean passed, int discriminationScore, int outsiderSolvableScore,
+        List<String> flags, String feedback, List<OptionReview> optionReviews, boolean available) {
+      this(sequence, passed, discriminationScore, outsiderSolvableScore, flags, feedback, optionReviews, available, null);
     }
   }
   public record OptionReview(String option, boolean passed, List<String> flags, String misconceptionType,

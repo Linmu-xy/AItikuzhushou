@@ -1,0 +1,12 @@
+[
+  { "code": "SINGLE_CHOICE", "label": "单选题", "aliases": ["单选", "SINGLECHOICE"] },
+  { "code": "MULTIPLE_CHOICE", "label": "多选题", "aliases": ["多选", "MULTIPLECHOICE"] },
+  { "code": "TRUE_FALSE", "label": "判断题", "aliases": ["判断", "TRUEFALSE"] },
+  { "code": "FILL_BLANK", "label": "填空题", "aliases": ["填空", "FILLBLANK"] },
+  { "code": "SHORT_ANSWER", "label": "简答题", "aliases": ["简答", "SHORTANSWER"] },
+  { "code": "CALCULATION", "label": "计算题", "aliases": ["计算", "CALCULATION"] },
+  { "code": "CASE_ANALYSIS", "label": "案例题", "aliases": ["案例", "CASEANALYSIS"] },
+  { "code": "ESSAY", "label": "论述题", "aliases": ["论述", "ESSAY"] },
+  { "code": "COMPREHENSIVE", "label": "综合题", "aliases": ["综合", "COMPREHENSIVE"] },
+  { "code": "PRACTICAL_TASK", "label": "实操任务", "aliases": ["实操", "PRACTICALTASK"] }
+]

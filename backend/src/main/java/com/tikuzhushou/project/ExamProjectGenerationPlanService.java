@@ -51,9 +51,10 @@ public class ExamProjectGenerationPlanService {
       throw new IllegalArgumentException("请先完成命题依据检查并获得 READY 快照");
     }
     TaskView existing = findBySnapshot(snapshot.snapshotId());
-    if (existing != null && (!"KNOWLEDGE_BASE".equals(project.mode())
+    boolean reusable = existing != null && (!"KNOWLEDGE_BASE".equals(project.mode())
         || existing.assessmentPlan() != null && KnowledgeAssessmentPlanningService.OPEN_ASSESSMENT_VERSION
-            .equals(existing.assessmentPlan().pipelineVersion()))) return existing;
+            .equals(existing.assessmentPlan().pipelineVersion()));
+    if (reusable && QuestionTypeOrder.VERSION.equals(existing.orderingVersion())) return existing;
 
     List<ScoreSpec> scoring = scoring(project.scoringStructureJson());
     DifficultyProfile difficulty = difficulty(project.difficultyProfileJson());
@@ -72,7 +73,9 @@ public class ExamProjectGenerationPlanService {
           for (int slot = 0; slot < distribution[index]; slot++)
             fixedSlots.add(Map.of("difficulty", DIFFICULTIES.get(index)));
       } else fixedSlots = fixedSlots(scoring, difficulty);
-      assessmentPlan = assessmentPlanning.propose(project, snapshot, questionsPerVariant, fixedSlots);
+      assessmentPlan = reusable ? existing.assessmentPlan()
+          : assessmentPlanning.propose(project, snapshot, questionsPerVariant, fixedSlots);
+      assessmentPlan = groupAssessmentPlan(assessmentPlan);
     }
     Instant now = Instant.now();
     UUID taskId = UUID.randomUUID();
@@ -85,6 +88,7 @@ public class ExamProjectGenerationPlanService {
     request.put("difficultyProfile", Map.of("easy", difficulty.easy(), "medium", difficulty.medium(), "hard", difficulty.hard()));
     request.put("scoringStructure", scoring.stream().map(ScoreSpec::asMap).toList());
     request.put("sourceRoles", sourceRoles);
+    request.put("orderingVersion", QuestionTypeOrder.VERSION);
     if (assessmentPlan != null) request.put("assessmentPlan", assessmentPlan);
     String requestJson = write(request);
 
@@ -101,7 +105,7 @@ public class ExamProjectGenerationPlanService {
       if (assessmentPlan != null) {
         for (KnowledgeAssessmentPlanningService.PlanItem item : assessmentPlan.items()) {
           jdbc.update("insert into exam_project_variant_items(id,generation_task_id,variant_no,variant_label,sequence_no,question_type,type_label,difficulty,points,source_roles_json,status,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?)",
-              UUID.randomUUID(), taskId, variant, label, sequence++, item.type(), typeLabel(item.type()),
+              UUID.randomUUID(), taskId, variant, label, item.sequence(), item.type(), typeLabel(item.type()),
               item.difficulty(), item.points(), write(sourceRoles), "PLANNED", Timestamp.from(now));
           itemCount++;
         }
@@ -157,7 +161,23 @@ public class ExamProjectGenerationPlanService {
     return new TaskView(rs.getObject("id", UUID.class), rs.getObject("project_id", UUID.class),
         rs.getObject("evidence_snapshot_id", UUID.class), rs.getString("status"), rs.getInt("variant_count"),
         rs.getInt("question_count_per_variant"), rs.getInt("total_question_count"),
-        rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(), assessmentPlan, List.of());
+        rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(), assessmentPlan, List.of(),
+        Objects.toString(request.get("orderingVersion"), "LEGACY"));
+  }
+
+  static KnowledgeAssessmentPlanningService.AssessmentPlan groupAssessmentPlan(KnowledgeAssessmentPlanningService.AssessmentPlan plan) {
+    var sorted = plan.items().stream().sorted(Comparator
+        .comparingInt((KnowledgeAssessmentPlanningService.PlanItem item) -> QuestionTypeOrder.rank(item.type(), item.type()))
+        .thenComparing(item -> QuestionTypeOrder.key(item.type(), item.type()))
+        .thenComparingInt(KnowledgeAssessmentPlanningService.PlanItem::sequence)).toList();
+    List<KnowledgeAssessmentPlanningService.PlanItem> items = new ArrayList<>();
+    for (var item : sorted) {
+      items.add(new KnowledgeAssessmentPlanningService.PlanItem(items.size() + 1, item.competency(), item.task(),
+          item.type(), item.difficulty(), item.points(), item.documentId(), item.page(), item.searchQuery(),
+          item.needsImage(), item.visualSummary(), item.requiredMaterial(), item.knowledgeUse(), item.answerability(), item.webEvidence()));
+    }
+    return new KnowledgeAssessmentPlanningService.AssessmentPlan(plan.summary(), List.copyOf(items), plan.webEvidence(),
+        plan.pipelineVersion(), plan.corpusContext(), plan.domainBrief());
   }
 
   private List<Map<String, Object>> fixedSlots(List<ScoreSpec> scoring, DifficultyProfile difficulty) {
@@ -173,17 +193,7 @@ public class ExamProjectGenerationPlanService {
   }
 
   private String typeLabel(String type) {
-    return switch (type) {
-      case "SINGLE_CHOICE" -> "单选题";
-      case "MULTIPLE_CHOICE" -> "多选题";
-      case "TRUE_FALSE" -> "判断题";
-      case "SHORT_ANSWER" -> "简答题";
-      case "CASE_ANALYSIS" -> "案例题";
-      case "CALCULATION" -> "计算题";
-      case "COMPREHENSIVE" -> "综合题";
-      case "PRACTICAL_TASK" -> "实操任务";
-      default -> type;
-    };
+    return QuestionTypeOrder.label(type, type);
   }
 
   private List<ScoreSpec> scoring(String raw) {
@@ -197,7 +207,8 @@ public class ExamProjectGenerationPlanService {
       if (label.isBlank()) throw new IllegalArgumentException("题型名称不能为空");
       result.add(new ScoreSpec(canonicalType(label), label, count, points));
     }
-    return List.copyOf(result);
+    return result.stream().sorted(Comparator.comparingInt((ScoreSpec spec) -> QuestionTypeOrder.rank(spec.questionType(), spec.typeLabel()))
+        .thenComparing(spec -> QuestionTypeOrder.key(spec.questionType(), spec.typeLabel()))).toList();
   }
 
   private DifficultyProfile difficulty(String raw) {
@@ -237,18 +248,7 @@ public class ExamProjectGenerationPlanService {
   }
 
   private String canonicalType(String label) {
-    String value = label.trim().toUpperCase(Locale.ROOT).replace(" ", "").replace("/", "");
-    if (value.contains("单选") || value.contains("SINGLECHOICE")) return "SINGLE_CHOICE";
-    if (value.contains("多选") || value.contains("MULTIPLECHOICE")) return "MULTIPLE_CHOICE";
-    if (value.contains("判断") || value.contains("TRUEFALSE")) return "TRUE_FALSE";
-    if (value.contains("填空") || value.contains("FILLBLANK")) return "FILL_BLANK";
-    if (value.contains("计算") || value.contains("CALCULATION")) return "CALCULATION";
-    if (value.contains("案例") || value.contains("CASEANALYSIS")) return "CASE_ANALYSIS";
-    if (value.contains("综合") || value.contains("COMPREHENSIVE")) return "COMPREHENSIVE";
-    if (value.contains("论述") || value.contains("ESSAY")) return "ESSAY";
-    if (value.contains("简答") || value.contains("SHORTANSWER")) return "SHORT_ANSWER";
-    if (value.contains("实操") || value.contains("PRACTICALTASK")) return "PRACTICAL_TASK";
-    return "CUSTOM";
+    return QuestionTypeOrder.canonical(label);
   }
 
   private int positiveInt(Object value, String label) {
@@ -299,10 +299,16 @@ public class ExamProjectGenerationPlanService {
 
   public record TaskView(UUID id, UUID projectId, UUID evidenceSnapshotId, String status, int variantCount,
       int questionCountPerVariant, int totalQuestionCount, Instant createdAt, Instant updatedAt,
-      KnowledgeAssessmentPlanningService.AssessmentPlan assessmentPlan, List<VariantItemView> items) {
+      KnowledgeAssessmentPlanningService.AssessmentPlan assessmentPlan, List<VariantItemView> items, String orderingVersion) {
+    public TaskView(UUID id, UUID projectId, UUID evidenceSnapshotId, String status, int variantCount,
+        int questionCountPerVariant, int totalQuestionCount, Instant createdAt, Instant updatedAt,
+        KnowledgeAssessmentPlanningService.AssessmentPlan assessmentPlan, List<VariantItemView> items) {
+      this(id, projectId, evidenceSnapshotId, status, variantCount, questionCountPerVariant, totalQuestionCount,
+          createdAt, updatedAt, assessmentPlan, items, QuestionTypeOrder.VERSION);
+    }
     TaskView withItems(List<VariantItemView> value) {
       return new TaskView(id, projectId, evidenceSnapshotId, status, variantCount, questionCountPerVariant,
-          totalQuestionCount, createdAt, updatedAt, assessmentPlan, value);
+          totalQuestionCount, createdAt, updatedAt, assessmentPlan, value, orderingVersion);
     }
   }
 

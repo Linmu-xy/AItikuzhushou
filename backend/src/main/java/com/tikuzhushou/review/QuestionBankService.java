@@ -45,7 +45,7 @@ public class QuestionBankService {
     items.addAll(jdbc.query("select i.id,i.run_id,i.sequence_no,i.question_type,i.difficulty,i.question_json,i.reviewed_at,i.updated_at,p.id project_id,p.name project_name,p.knowledge_base_id,k.name knowledge_base_name "
         + "from exam_project_generation_items i join exam_project_generation_runs r on r.id=i.run_id "
         + "join exam_projects p on p.id=r.project_id join knowledge_bases k on k.id=p.knowledge_base_id "
-        + "where p.owner_id=? and i.status='APPROVED'", this::projectItem, owner));
+        + "where p.owner_id=? and i.status in ('APPROVED','APPROVED_WITH_RISK')", this::projectItem, owner));
 
     Map<UUID, LegacySource> sources = new HashMap<>();
     Map<UUID, String> baseNames = new HashMap<>();

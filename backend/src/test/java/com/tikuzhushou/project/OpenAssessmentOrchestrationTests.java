@@ -123,7 +123,7 @@ class OpenAssessmentOrchestrationTests {
     assertThat(item.status()).isEqualTo("APPROVED");
     assertThat(item.questionVersion()).isEqualTo(2);
     assertThat(item.question().get("stem")).isEqualTo("人工编辑的题目");
-    assertThat(service.get(runId).status()).isEqualTo("REVIEW_REQUIRED");
+    assertThat(service.get(runId).status()).isEqualTo("SUCCEEDED");
     verify(refiner, times(1)).generateCandidates(anyList(), eq("FAST"));
   }
 

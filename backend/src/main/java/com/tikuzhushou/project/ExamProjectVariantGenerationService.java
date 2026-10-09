@@ -68,6 +68,8 @@ public class ExamProjectVariantGenerationService {
     String mode = normalizeMode(requestedMode);
     RunView active = active(projectId);
     if (active != null) return active;
+    // A new run may fork a legacy plan, but retries and historical runs retain their original slot IDs.
+    if (!QuestionTypeOrder.VERSION.equals(task.orderingVersion())) task = plans.create(projectId);
     List<Seed> seeds = loadSeeds(task.id());
     if (seeds.isEmpty()) throw new IllegalArgumentException("变式题位计划没有可生成的题位");
     EvidencePack pack = buildEvidence(snapshot);
@@ -104,6 +106,7 @@ public class ExamProjectVariantGenerationService {
 
   /** Lightweight task-center listing: no question bodies and no per-project request fan-out. */
   public List<RunView> listSummaries() {
+    reconcileFinishedStatuses();
     String sql = "select r.id,r.project_id,r.generation_task_id,r.evidence_snapshot_id,r.status,r.generation_mode," +
         "r.planned_count,r.processed_count,r.review_required_count,r.review_pending_count,r.failed_count," +
         "r.error_message,r.created_at,r.started_at,r.finished_at,r.updated_at " +
@@ -111,6 +114,28 @@ public class ExamProjectVariantGenerationService {
         (access.admin() ? "" : "where p.owner_id=? ") + "order by r.created_at desc limit 100";
     return access.admin() ? jdbc.query(sql, (rs, row) -> summary(rs))
         : jdbc.query(sql, (rs, row) -> summary(rs), access.currentUserId());
+  }
+
+  /** Repairs terminal batch summaries from item states so historical reviews leave the task center promptly. */
+  private void reconcileFinishedStatuses() {
+    jdbc.update("update exam_project_generation_runs r set "
+        + "processed_count=(select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status not in ('PLANNED','GENERATING')), "
+        + "review_required_count=(select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status='REVIEW_REQUIRED'), "
+        + "review_pending_count=(select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status='REVIEW_PENDING'), "
+        + "failed_count=(select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status in ('FAILED','REJECTED')) "
+        + "where r.status in ('QUEUED','RUNNING','REVIEW_REQUIRED','PARTIAL','REVIEW_PENDING','FAILED','SUCCEEDED') "
+        + "and exists (select 1 from exam_project_generation_items i where i.run_id=r.id)");
+    jdbc.update("update exam_project_generation_runs r set status=case "
+        + "when (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status<>'REMOVED') > 0 "
+        + "and (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status in ('APPROVED','APPROVED_WITH_RISK')) = (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status<>'REMOVED') then 'SUCCEEDED' "
+        + "when (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status<>'REMOVED') > 0 "
+        + "and (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status in ('APPROVED','APPROVED_WITH_RISK','REVIEW_REQUIRED')) = (select count(*) from exam_project_generation_items i where i.run_id=r.id and i.status<>'REMOVED') then 'REVIEW_REQUIRED' "
+        + "when exists (select 1 from exam_project_generation_items i where i.run_id=r.id and i.status in ('APPROVED','APPROVED_WITH_RISK','REVIEW_REQUIRED')) then 'PARTIAL' "
+        + "when exists (select 1 from exam_project_generation_items i where i.run_id=r.id and i.status='REVIEW_PENDING') then 'REVIEW_PENDING' "
+        + "else 'FAILED' end "
+        + "where r.status in ('RUNNING','REVIEW_REQUIRED','PARTIAL','REVIEW_PENDING','FAILED','SUCCEEDED') "
+        + "and exists (select 1 from exam_project_generation_items i where i.run_id=r.id) "
+        + "and not exists (select 1 from exam_project_generation_items i where i.run_id=r.id and i.status in ('PLANNED','GENERATING'))");
   }
 
   public RunView get(UUID runId) {
@@ -167,8 +192,68 @@ public class ExamProjectVariantGenerationService {
       jdbc.update("update exam_project_generation_runs set status=?,updated_at=? where id=?", status, Timestamp.from(Instant.now()), runId);
       return get(runId);
     } finally {
-      jdbc.update("update exam_project_generation_items set error_code=case when status='REVIEW_PENDING' then 'REVIEW_SERVICE_ERROR' when status='REJECTED' then 'QUALITY_REJECTED' else null end where id=? and error_code='REVIEW_RETRYING'", itemId);
+      jdbc.update("update exam_project_generation_items set error_code=case when status='REVIEW_PENDING' then 'REVIEW_PROVIDER_ERROR' when status='REJECTED' then 'QUALITY_REJECTED' else null end where id=? and error_code='REVIEW_RETRYING'", itemId);
     }
+  }
+
+  /** Requeues one failed AI item in the existing run and leaves every other item untouched. */
+  @Transactional
+  public RunView retryFailedItem(UUID projectId, UUID runId, UUID itemId) {
+    RunView run = get(runId);
+    ensureProject(run, projectId);
+    ensureFinished(run);
+    ItemView item = findItem(run, itemId);
+    if (!retryableGenerationFailure(item)) {
+      throw new IllegalArgumentException("只能重新生成尚未人工编辑或审核的失败题目");
+    }
+    int changed = jdbc.update("update exam_project_generation_items set status='PLANNED',error_code=null,error_message=null,updated_at=? "
+            + "where id=? and run_id=? and status in ('FAILED','REJECTED') and reviewer_id is null and question_version=1",
+        Timestamp.from(Instant.now()), itemId, runId);
+    if (changed != 1) throw new IllegalArgumentException("这道题已被其他操作更新，请刷新后重试");
+    jdbc.update("update exam_project_generation_runs set status='QUEUED',finished_at=null,error_message=null,updated_at=? where id=?",
+        Timestamp.from(Instant.now()), runId);
+    return get(runId);
+  }
+
+  /** Excludes one failed AI item from delivery without deleting its audit/history row. */
+  @Transactional
+  public RunView removeFailedItem(UUID projectId, UUID runId, UUID itemId) {
+    RunView run = get(runId);
+    ensureProject(run, projectId);
+    ensureFinished(run);
+    ItemView item = findItem(run, itemId);
+    if (!retryableGenerationFailure(item)) {
+      throw new IllegalArgumentException("只能删除尚未人工编辑或审核的失败题目");
+    }
+    int changed = jdbc.update("update exam_project_generation_items set status='REMOVED',error_code='QUESTION_REMOVED',"
+            + "error_message='用户选择删除该失败题目，导出时跳过',updated_at=? where id=? and run_id=? "
+            + "and status in ('FAILED','REJECTED') and reviewer_id is null and question_version=1",
+        Timestamp.from(Instant.now()), itemId, runId);
+    if (changed != 1) throw new IllegalArgumentException("这道题已被其他操作更新，请刷新后重试");
+    RunView updated = get(runId);
+    String status = terminalStatus(updated);
+    jdbc.update("update exam_project_generation_runs set status=?,finished_at=?,updated_at=? where id=?",
+        status, Timestamp.from(Instant.now()), Timestamp.from(Instant.now()), runId);
+    return get(runId);
+  }
+
+  private void ensureProject(RunView run, UUID projectId) {
+    if (!projectId.equals(run.projectId())) throw new IllegalArgumentException("生成任务不属于当前项目");
+  }
+
+  private void ensureFinished(RunView run) {
+    if (Set.of("QUEUED", "RUNNING").contains(run.status())) throw new IllegalArgumentException("请等待本批次生成完成后再处理失败题目");
+  }
+
+  private ItemView findItem(RunView run, UUID itemId) {
+    return run.items().stream().filter(value -> itemId.equals(value.id())).findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("题目不存在"));
+  }
+
+  private boolean retryableGenerationFailure(ItemView item) {
+    return Set.of("FAILED", "REJECTED").contains(item.status())
+        && item.reviewerId() == null && item.questionVersion() == 1
+        && ("FAILED".equals(item.status()) || "QUALITY_REJECTED".equals(item.errorCode()));
   }
 
   /** Executes one run. The worker sets the owner's security context before calling this method. */
@@ -331,7 +416,7 @@ public class ExamProjectVariantGenerationService {
     if (!candidate.valid()) {
       status = "FAILED"; code = "QUALITY_REJECTED"; message = candidate.failureReason();
     } else if (review == null || !review.available()) {
-      status = "REVIEW_PENDING"; code = "REVIEW_SERVICE_ERROR";
+      status = "REVIEW_PENDING"; code = review == null || review.errorCode() == null ? "REVIEW_PROVIDER_ERROR" : review.errorCode();
       message = review == null ? "专业审题未返回结果" : review.feedback();
     } else if (!review.passed()) {
       status = "REJECTED"; code = "QUALITY_REJECTED"; message = review.feedback();
@@ -369,9 +454,12 @@ public class ExamProjectVariantGenerationService {
   }
 
   private String terminalStatus(RunView run) {
-    long completed = run.items().stream().filter(item -> Set.of("REVIEW_REQUIRED", "APPROVED").contains(item.status())).count();
+    long active = run.items().stream().filter(item -> !"REMOVED".equals(item.status())).count();
+    long approved = run.items().stream().filter(item -> Set.of("APPROVED", "APPROVED_WITH_RISK").contains(item.status())).count();
+    long completed = run.items().stream().filter(item -> Set.of("REVIEW_REQUIRED", "APPROVED", "APPROVED_WITH_RISK").contains(item.status())).count();
     String finalStatus;
-    if (completed == run.plannedCount()) finalStatus = "REVIEW_REQUIRED";
+    if (active > 0 && approved == active) finalStatus = "SUCCEEDED";
+    else if (active > 0 && completed == active) finalStatus = "REVIEW_REQUIRED";
     else if (completed > 0) finalStatus = "PARTIAL";
     else if (run.reviewPendingCount() > 0) finalStatus = "REVIEW_PENDING";
     else finalStatus = "FAILED";
@@ -714,6 +802,7 @@ public class ExamProjectVariantGenerationService {
   private Map<String, Object> reviewView(QuestionProfessionalReviewService.Review review) {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("passed", review.passed()); result.put("available", review.available());
+    result.put("errorCode", review.errorCode());
     result.put("discriminationScore", review.discriminationScore()); result.put("outsiderSolvableScore", review.outsiderSolvableScore());
     result.put("flags", review.flags()); result.put("feedback", review.feedback());
     result.put("optionReviews", review.optionReviews().stream().map(value -> Map.of("option", value.option(), "passed", value.passed(), "flags", value.flags(), "misconceptionType", value.misconceptionType(), "feedback", value.feedback())).toList());

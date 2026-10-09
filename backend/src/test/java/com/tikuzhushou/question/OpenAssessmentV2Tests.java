@@ -106,6 +106,18 @@ class OpenAssessmentV2Tests {
     assertThat(service.review(question()).passed()).isFalse();
   }
 
+  @Test void incompleteChoiceChecksUseOneBoundedProtocolRecovery() {
+    solveReturns(solution("B"));
+    String incomplete = judgment().replace("\"optionChecks\":{\"A\":\"PASS\",\"B\":\"PASS\",\"C\":\"PASS\",\"D\":\"PASS\"},", "");
+    judgeReturns(incomplete);
+    when(ai.analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_JUDGE_PROTOCOL_RECOVERY")))
+        .thenReturn(judgment());
+    var review = service.review(question());
+    assertThat(review.passed()).isTrue();
+    assertThat(review.errorCode()).isNull();
+    verify(ai).analyseJsonFast(anyString(), anyString(), anyInt(), eq("ASSESSMENT_V2_JUDGE_PROTOCOL_RECOVERY"));
+  }
+
   @Test void unavailableSolverLeavesCandidatePendingInsteadOfPretendingQualityFailure() {
     when(ai.analyseJson(anyString(), anyString(), anyInt(), anyString(), eq("ASSESSMENT_V2_SOLVE")))
         .thenThrow(new IllegalStateException("timeout"));
